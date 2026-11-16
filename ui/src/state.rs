@@ -6,6 +6,10 @@
 //! a start or a stop that blocks does not block the events.
 //!
 //! The order of the locks: `session`, then `capture`, then `stop_flag`.
+//! `capture` is also the gate between a session start and an update
+//! install: a start sets `starting` under it and checks the update under
+//! it, and an install checks the session and marks the update under it.
+//! The lock of `updates` comes after `capture` and `status`.
 //! `config_lock` comes before `key_lock` and `config_texts`. `session` also comes before
 //! `key_lock`: the key lookup of a start takes it while the start holds
 //! `session`. A holder of `key_lock` takes no other lock, and a holder of
@@ -24,6 +28,7 @@ use crate::catalog::Catalog;
 use crate::dto::{ModelEventDto, StartInfoDto, StatusDto, StopReasonDto};
 use crate::paths::StartupNotes;
 use crate::secrets::{KeyLock, KeyStore};
+use crate::updater::Updates;
 
 /// A running session. `Runtime` is the real one. The tests use a fake.
 pub trait SessionControl: Send {
@@ -165,6 +170,8 @@ pub struct AppState {
     /// True after "Start..." of the tray menu until the page takes it. The
     /// page can load after the click, so the event alone can be lost.
     pub(crate) tray_start: AtomicBool,
+    /// The update check and install.
+    pub(crate) updates: Arc<Updates>,
 }
 
 /// The type of `AppState::catalog_hook`.
@@ -208,6 +215,11 @@ impl AppState {
             report_dir: tempfile::tempdir().expect("a temporary report folder"),
             startup: Mutex::new(StartupNotes::default()),
             tray_start: AtomicBool::new(false),
+            // A build with debug assertions never checks for updates.
+            updates: Arc::new(Updates::new(
+                env!("CARGO_PKG_VERSION"),
+                cfg!(debug_assertions),
+            )),
         }
     }
 
@@ -224,6 +236,13 @@ impl AppState {
     /// The state with a data folder for the models.
     pub fn with_data_dir(mut self, data_dir: Option<PathBuf>) -> AppState {
         self.data_dir = data_dir;
+        self
+    }
+
+    /// The state with another update state, for the tests.
+    #[cfg(test)]
+    pub fn with_updates(mut self, updates: Arc<Updates>) -> AppState {
+        self.updates = updates;
         self
     }
 

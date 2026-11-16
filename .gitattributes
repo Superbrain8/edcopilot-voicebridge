@@ -1,0 +1,3 @@
+# The updater test files are signed byte for byte. A line end change
+# breaks the signature, so Git must not change them.
+ui/fixtures/updater/** -text

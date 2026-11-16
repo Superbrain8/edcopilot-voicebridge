@@ -176,6 +176,12 @@ pub struct DiagnosticsDto {
     pub save_audio_dir: String,
 }
 
+/// `[updates]`: the switch of the automatic update check.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct UpdatesDto {
+    pub check: bool,
+}
+
 /// The texts of the start for the Status and Diagnostics screens.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct StartupNotesDto {
@@ -245,6 +251,7 @@ pub struct ConfigDto {
     pub always_listening: AlwaysListeningDto,
     pub stt: SttDto,
     pub diagnostics: DiagnosticsDto,
+    pub updates: UpdatesDto,
 }
 
 impl ConfigDto {
@@ -332,6 +339,9 @@ impl ConfigDto {
             diagnostics: DiagnosticsDto {
                 log_file: path_text(&config.diagnostics.log_file),
                 save_audio_dir: path_text(&config.diagnostics.save_audio_dir),
+            },
+            updates: UpdatesDto {
+                check: config.updates.check,
             },
         }
     }
@@ -1046,6 +1056,39 @@ pub struct ModelInfoDto {
     pub step: Option<ModelEventDto>,
 }
 
+/// The state of the update check and install. The Tauri event
+/// `update://event` carries it after each change.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct UpdateStatusDto {
+    /// The version of this program.
+    pub current_version: String,
+    /// True for a build with debug assertions: it never checks.
+    pub developer_build: bool,
+    /// `idle`, `checking`, `up_to_date`, `available`, `downloading`,
+    /// `ready`, or `check_failed`.
+    pub phase: String,
+    /// The offered version, with `available`, `downloading`, and `ready`.
+    pub version: Option<String>,
+    /// The release notes of the offered version, as plain text.
+    pub notes: Option<String>,
+    /// The publish date of the offered version (RFC 3339).
+    pub date: Option<String>,
+    /// The release page of the offered version.
+    pub release_page: Option<String>,
+    /// The bytes of the download so far, with `downloading`.
+    pub received: u64,
+    /// The size of the download, when the server sent it.
+    pub total: Option<u64>,
+    /// Why the last check failed, with `check_failed`.
+    pub cause: Option<String>,
+    /// The text of the last failed download or install of the offer.
+    pub error: Option<String>,
+    /// The end of the last check, in milliseconds since 1970.
+    pub checked_at: Option<u64>,
+    /// True after "Later", until the next manual check.
+    pub hidden: bool,
+}
+
 /// One row of a word table. `spoken` and `meant` have the meaning of
 /// `voicebridge::tables::Row` for the table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1639,7 +1682,8 @@ mod tests {
                                               "api_key_env": "OPENAI_API_KEY",
                                               "model": "gpt-4o-mini-transcribe",
                                               "language": "", "timeout_seconds": 10}},
-                "diagnostics": {"log_file": "", "save_audio_dir": ""}
+                "diagnostics": {"log_file": "", "save_audio_dir": ""},
+                "updates": {"check": true}
             })
         );
     }
@@ -2032,6 +2076,60 @@ mod tests {
         for (name, dto) in &startup {
             assert_eq!(samples[*name], wire(dto), "startup sample {name}");
         }
+
+        let updates = update_samples();
+        let samples = fixture["update"].as_object().unwrap();
+        assert_eq!(samples.len(), updates.len());
+        for (name, dto) in &updates {
+            assert_eq!(samples[*name], wire(dto), "update sample {name}");
+        }
+    }
+
+    /// Each phase of the update state, made with the state machine.
+    fn update_samples() -> Vec<(&'static str, UpdateStatusDto)> {
+        use crate::updater::tests::{found, Download, FakePending};
+        use crate::updater::{Cause, Updates};
+        const AT: u64 = 1_796_112_000_000;
+        let offer = || {
+            let updates = Updates::new("0.2.0", false);
+            updates.begin_check(true).unwrap();
+            let pending = FakePending::new(Download::Forever);
+            updates
+                .finish_check(Ok(Some(found("0.3.0", pending))), AT)
+                .unwrap();
+            updates
+        };
+        let mut samples = vec![
+            ("idle", Updates::new("0.2.0", false).status()),
+            ("developer_build", Updates::new("0.2.0", true).status()),
+        ];
+        let checking = Updates::new("0.2.0", false);
+        checking.begin_check(true).unwrap();
+        samples.push(("checking", checking.status()));
+        let current = Updates::new("0.2.0", false);
+        current.begin_check(true).unwrap();
+        samples.push(("up_to_date", current.finish_check(Ok(None), AT).unwrap()));
+        let failed = Updates::new("0.2.0", false);
+        failed.begin_check(false).unwrap();
+        failed.finish_check(Err(Cause::Timeout), AT).unwrap();
+        samples.push(("check_failed", failed.status()));
+        samples.push(("available", offer().status()));
+        let hidden = offer();
+        hidden.hide();
+        samples.push(("available_hidden", hidden.status()));
+        let downloading = offer();
+        let (id, _) = downloading.begin_download().unwrap();
+        downloading.progress(id, 3_000_000, Some(12_500_000));
+        samples.push(("downloading", downloading.status()));
+        let failed_install = offer();
+        let (id, _) = failed_install.begin_download().unwrap();
+        failed_install.finish_download(id, Err(Cause::Signature));
+        samples.push(("install_failed", failed_install.status()));
+        let ready = offer();
+        let (id, _) = ready.begin_download().unwrap();
+        ready.finish_download(id, Ok(()));
+        samples.push(("ready", ready.status()));
+        samples
     }
 
     type TableSamples = (

@@ -145,7 +145,8 @@
         "timeout_seconds": 10
       }
     },
-    "diagnostics": { "log_file": "", "save_audio_dir": "" }
+    "diagnostics": { "log_file": "", "save_audio_dir": "" },
+    "updates": { "check": true }
   },
   "check": {
     "loaded": {
@@ -467,6 +468,158 @@
       "notes": [],
       "update_problems": [],
       "data_dir": null
+    }
+  },
+  "update": {
+    "idle": {
+      "current_version": "0.2.0",
+      "developer_build": false,
+      "phase": "idle",
+      "version": null,
+      "notes": null,
+      "date": null,
+      "release_page": null,
+      "received": 0,
+      "total": null,
+      "cause": null,
+      "error": null,
+      "checked_at": null,
+      "hidden": false
+    },
+    "developer_build": {
+      "current_version": "0.2.0",
+      "developer_build": true,
+      "phase": "idle",
+      "version": null,
+      "notes": null,
+      "date": null,
+      "release_page": null,
+      "received": 0,
+      "total": null,
+      "cause": null,
+      "error": null,
+      "checked_at": null,
+      "hidden": false
+    },
+    "checking": {
+      "current_version": "0.2.0",
+      "developer_build": false,
+      "phase": "checking",
+      "version": null,
+      "notes": null,
+      "date": null,
+      "release_page": null,
+      "received": 0,
+      "total": null,
+      "cause": null,
+      "error": null,
+      "checked_at": null,
+      "hidden": false
+    },
+    "up_to_date": {
+      "current_version": "0.2.0",
+      "developer_build": false,
+      "phase": "up_to_date",
+      "version": null,
+      "notes": null,
+      "date": null,
+      "release_page": null,
+      "received": 0,
+      "total": null,
+      "cause": null,
+      "error": null,
+      "checked_at": 1796112000000,
+      "hidden": false
+    },
+    "check_failed": {
+      "current_version": "0.2.0",
+      "developer_build": false,
+      "phase": "check_failed",
+      "version": null,
+      "notes": null,
+      "date": null,
+      "release_page": null,
+      "received": 0,
+      "total": null,
+      "cause": "the server did not answer in time",
+      "error": null,
+      "checked_at": 1796112000000,
+      "hidden": false
+    },
+    "available": {
+      "current_version": "0.2.0",
+      "developer_build": false,
+      "phase": "available",
+      "version": "0.3.0",
+      "notes": "- Updates inside the program.",
+      "date": "2026-12-01T10:00:00Z",
+      "release_page": "https://github.com/Superbrain8/edcopilot-voicebridge/releases/tag/v0.3.0",
+      "received": 0,
+      "total": null,
+      "cause": null,
+      "error": null,
+      "checked_at": 1796112000000,
+      "hidden": false
+    },
+    "available_hidden": {
+      "current_version": "0.2.0",
+      "developer_build": false,
+      "phase": "available",
+      "version": "0.3.0",
+      "notes": "- Updates inside the program.",
+      "date": "2026-12-01T10:00:00Z",
+      "release_page": "https://github.com/Superbrain8/edcopilot-voicebridge/releases/tag/v0.3.0",
+      "received": 0,
+      "total": null,
+      "cause": null,
+      "error": null,
+      "checked_at": 1796112000000,
+      "hidden": true
+    },
+    "downloading": {
+      "current_version": "0.2.0",
+      "developer_build": false,
+      "phase": "downloading",
+      "version": "0.3.0",
+      "notes": "- Updates inside the program.",
+      "date": "2026-12-01T10:00:00Z",
+      "release_page": "https://github.com/Superbrain8/edcopilot-voicebridge/releases/tag/v0.3.0",
+      "received": 3000000,
+      "total": 12500000,
+      "cause": null,
+      "error": null,
+      "checked_at": 1796112000000,
+      "hidden": false
+    },
+    "install_failed": {
+      "current_version": "0.2.0",
+      "developer_build": false,
+      "phase": "available",
+      "version": "0.3.0",
+      "notes": "- Updates inside the program.",
+      "date": "2026-12-01T10:00:00Z",
+      "release_page": "https://github.com/Superbrain8/edcopilot-voicebridge/releases/tag/v0.3.0",
+      "received": 0,
+      "total": null,
+      "cause": null,
+      "error": "The update did not install: the signature of the installer is not correct. The program is not changed.",
+      "checked_at": 1796112000000,
+      "hidden": false
+    },
+    "ready": {
+      "current_version": "0.2.0",
+      "developer_build": false,
+      "phase": "ready",
+      "version": "0.3.0",
+      "notes": "- Updates inside the program.",
+      "date": "2026-12-01T10:00:00Z",
+      "release_page": "https://github.com/Superbrain8/edcopilot-voicebridge/releases/tag/v0.3.0",
+      "received": 0,
+      "total": null,
+      "cause": null,
+      "error": null,
+      "checked_at": 1796112000000,
+      "hidden": false
     }
   }
 }

@@ -11,6 +11,7 @@ mod paths;
 mod secrets;
 mod state;
 mod tray;
+mod updater;
 
 use std::sync::Arc;
 
@@ -72,6 +73,9 @@ fn main() {
         // only the open dialog. The Rust side also shows the note of the
         // notification area with it.
         .plugin(tauri_plugin_dialog::init())
+        // The update check and install. Only the Rust side uses it: the
+        // capability file gives the page no updater permission.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             if let Some(data) = &first_start_dir {
                 // A release build has no console: the window shows each
@@ -105,6 +109,9 @@ fn main() {
                 .cloned()
                 .ok_or("tauri.conf.json has no window")?;
             tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?.build()?;
+            // The first automatic update check comes after the start. It
+            // does not stop the start.
+            commands::ipc::start_update_timer(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -142,6 +149,11 @@ fn main() {
             commands::ipc::open_folder,
             commands::ipc::startup_notes,
             commands::ipc::take_tray_start,
+            commands::ipc::update_status,
+            commands::ipc::check_for_updates,
+            commands::ipc::install_update,
+            commands::ipc::cancel_update,
+            commands::ipc::hide_update,
         ])
         .build(tauri::generate_context!())
         .expect("the Tauri program could not start")

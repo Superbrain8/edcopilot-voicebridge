@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use voicebridge::runtime::{EventSink, RuntimeEvent};
 
-use crate::dto::{EventDto, ModelEventDto, StartInfoDto, StopReasonDto};
+use crate::dto::{EventDto, ModelEventDto, StartInfoDto, StopReasonDto, UpdateStatusDto};
 use crate::state::{lock, Status};
 
 /// The name of the Tauri event for each session event. The payload is an
@@ -14,6 +14,23 @@ pub const SESSION_EVENT: &str = "session://event";
 /// The name of the Tauri event for each step of the model download. The
 /// payload is a `ModelEventDto`.
 pub const MODEL_EVENT: &str = "model://event";
+
+/// The name of the Tauri event for each change of the update state. The
+/// payload is an `UpdateStatusDto`.
+pub const UPDATE_EVENT: &str = "update://event";
+
+/// Sends the update state to the web part.
+pub trait UpdateEmit: Send + Sync {
+    fn emit_update(&self, status: &UpdateStatusDto);
+}
+
+impl UpdateEmit for TauriEmit {
+    fn emit_update(&self, status: &UpdateStatusDto) {
+        use tauri::Emitter;
+        // A window that is closed does not stop the update.
+        let _ = self.0.emit(UPDATE_EVENT, status);
+    }
+}
 
 /// Sends one event to the web part.
 pub trait Emit: Send + Sync + 'static {
@@ -114,6 +131,22 @@ pub mod tests {
     impl ModelEmit for FakeEmit {
         fn emit_model(&self, event: &ModelEventDto) {
             lock(&self.0).push(serde_json::to_value(event).unwrap());
+        }
+    }
+
+    impl UpdateEmit for FakeEmit {
+        fn emit_update(&self, status: &UpdateStatusDto) {
+            lock(&self.0).push(serde_json::to_value(status).unwrap());
+        }
+    }
+
+    impl FakeEmit {
+        /// The `phase` of each update event.
+        pub fn phases(&self) -> Vec<String> {
+            lock(&self.0)
+                .iter()
+                .map(|e| e["phase"].as_str().unwrap().to_string())
+                .collect()
         }
     }
 

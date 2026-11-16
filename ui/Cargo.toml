@@ -28,6 +28,14 @@ url = "=2.5.8"
 sha2 = "=0.10.9"
 bzip2 = "=0.6.1"
 tar = { version = "=0.4.46", default-features = false }
+# The update check and the install of a new version. Only the Rust side
+# uses it: the capability file gives the page no updater permission. No
+# `zip` feature: the program installs only the Tauri 2 installer, never a
+# Tauri 1 archive.
+tauri-plugin-updater = { version = "=2.14.1", default-features = false, features = [
+  "rustls-tls",
+  "system-proxy",
+] }
 
 [target.'cfg(windows)'.dependencies]
 # The free disk space, and ShellExecuteExW for "Open folder" of the
@@ -41,6 +49,8 @@ windows-sys = { version = "=0.61.2", features = [
 ] }
 
 [dev-dependencies]
+# The mock runtime for the updater tests: a Tauri program without a window.
+tauri = { version = "=2.12.5", features = ["tray-icon", "test"] }
 # The synthetic profile for the tests. Only the tests get the feature.
 edcopilot-voicebridge-core = { path = "../core", features = ["test-support"] }
 tempfile = "3"

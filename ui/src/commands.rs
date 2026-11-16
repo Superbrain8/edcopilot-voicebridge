@@ -22,12 +22,13 @@ use crate::dto::{
     BindingDto, CheckDto, CommandListDto, CommandRowDto, CompositeGroupDto, ConfigDto,
     DiagnosticsPart, EditDto, KeyResultDto, LeftOutListDto, LeftOutRowDto, ModelEventDto,
     ModelInfoDto, OutcomeDto, PhraseTestDto, RowDto, SaveResultDto, StartupNotesDto, StatusDto,
-    TableCheckDto, TableDto, TableKindDto, TableSaveDto, BASE_URL_SECRET,
+    TableCheckDto, TableDto, TableKindDto, TableSaveDto, UpdateStatusDto, BASE_URL_SECRET,
 };
-use crate::events::{Emit, ModelEmit, WindowSink};
+use crate::events::{Emit, ModelEmit, UpdateEmit, WindowSink};
 use crate::model_download::{self, DownloadEvent, Fetch, ModelSource};
 use crate::secrets::{host_entry, key_lookup, remove_key, save_key, store_key_matches};
 use crate::state::{lock, AppState};
+use crate::updater::{self, PendingUpdate};
 use voicebridge::tables::{self, Row, TableKind};
 
 /// The text of an error with its causes, for example of a configuration
@@ -412,8 +413,11 @@ pub fn save_config(
         )
         .map_err(load_error)?
     };
-    // The running session keeps the configuration of its start.
-    let restart_needed = result.written && state.session_active();
+    // The running session keeps the configuration of its start. The
+    // session does not use the update switch.
+    let restart_needed = result.written
+        && state.session_active()
+        && keys.iter().any(|key| *key != UPDATES_CHECK_KEY);
     Ok(SaveResultDto {
         problems: result.problems,
         written: result.written,
@@ -455,6 +459,9 @@ pub fn check(state: &AppState) -> Result<CheckDto, String> {
 /// The end of the window text of an absent key: the window has a key
 /// field. The label is the heading of the field on the Setup screen.
 pub const KEY_FIELD_HINT: &str = "or save a key in the field \"API key\" on the Setup screen";
+
+/// The configuration key of the update switch.
+pub const UPDATES_CHECK_KEY: &str = "updates.check";
 
 /// The text of a start while a session runs.
 pub const ALREADY_RUNNING: &str = "a session is already running";
@@ -499,6 +506,10 @@ pub fn start_session_with(
         let capture = lock(&state.capture);
         if capture.is_some() {
             return Err(CAPTURE_RUNS.to_string());
+        }
+        // The install of an update checks `starting` under the same lock.
+        if state.updates.blocks_session() {
+            return Err(updater::IN_PROGRESS.to_string());
         }
         // The stop flag is in place before `starting` is set. Thus a stop
         // that sees `starting` always finds the flag of this start, and
@@ -577,6 +588,8 @@ pub fn stop_session(state: &AppState) -> Result<(), String> {
 /// a token that EDCoPilot did not read and writes its last log line. Safe
 /// to call more than one time.
 pub fn shutdown(state: &AppState) {
+    // After the download it is too late: the installer starts.
+    let _ = state.updates.cancel();
     let _ = cancel_model_download(state);
     let _ = cancel_capture(state);
     let _ = stop_session(state);
@@ -910,6 +923,29 @@ pub fn cancel_model_download(state: &AppState) -> Result<(), String> {
         cancel.store(true, Ordering::SeqCst);
     }
     Ok(())
+}
+
+/// Marks the start of the install of the offered update. It is refused
+/// while a session runs, starts, or stops. The capture lock is the gate: a
+/// session start sets `starting` under it and checks the update under it.
+/// Thus a start and an install never both go through.
+pub fn begin_update_install(state: &AppState) -> Result<(u64, Arc<dyn PendingUpdate>), String> {
+    let _gate = lock(&state.capture);
+    if state.session_active() {
+        return Err(updater::STOP_FIRST.to_string());
+    }
+    state.updates.begin_download()
+}
+
+/// `updates.check` of the configuration in use. The error text when the
+/// file does not load: then no automatic check runs.
+pub fn updates_check_enabled(state: &AppState) -> Result<bool, String> {
+    if let Some(problem) = state.startup_problem() {
+        return Err(problem);
+    }
+    Config::load_as_written(state.config_path())
+        .map(|config| config.updates.check)
+        .map_err(load_error)
 }
 
 /// The longest filter, in characters.
@@ -1274,6 +1310,98 @@ pub mod ipc {
     #[tauri::command]
     pub fn cancel_model_download(state: tauri::State<'_, AppState>) -> Result<(), String> {
         super::cancel_model_download(&state)
+    }
+
+    /// The update server of the plugin, with the address and the key of
+    /// `tauri.conf.json`. Just before the installer starts, the program
+    /// stops the session and ends the tray icon.
+    fn update_source(app: &AppHandle) -> Result<updater::PluginSource, updater::Cause> {
+        let exit = app.clone();
+        updater::PluginSource::new(
+            app,
+            None,
+            move || {
+                super::shutdown(&exit.state::<AppState>());
+                exit.cleanup_before_exit();
+            },
+            updater::plugin_install(),
+        )
+    }
+
+    /// The automatic checks: one about 10 seconds after the start, then one
+    /// every 24 hours. Each check reads `updates.check` again. A developer
+    /// build never checks.
+    pub fn start_update_timer(app: AppHandle) {
+        if app.state::<AppState>().updates.developer_build() {
+            eprintln!("update: no automatic check: this is a developer build");
+            return;
+        }
+        std::thread::spawn(move || {
+            std::thread::sleep(updater::FIRST_CHECK_DELAY);
+            loop {
+                let state = app.state::<AppState>();
+                let enabled = super::updates_check_enabled(&state);
+                let emit = TauriEmit(app.clone());
+                match update_source(&app) {
+                    Ok(source) => tauri::async_runtime::block_on(updater::auto_check(
+                        &state.updates,
+                        &source,
+                        enabled,
+                        &emit,
+                    )),
+                    Err(cause) => eprintln!("update: no automatic check: {}", cause.text()),
+                }
+                std::thread::sleep(updater::CHECK_INTERVAL);
+            }
+        });
+    }
+
+    #[tauri::command]
+    pub fn update_status(state: tauri::State<'_, AppState>) -> UpdateStatusDto {
+        state.updates.status()
+    }
+
+    /// "Check for updates". It also works when `updates.check` is false.
+    #[tauri::command]
+    pub async fn check_for_updates(app: AppHandle) -> Result<UpdateStatusDto, String> {
+        let updates = Arc::clone(&app.state::<AppState>().updates);
+        if updates.developer_build() {
+            return Err(updater::DEVELOPER_BUILD.to_string());
+        }
+        let source = update_source(&app).map_err(updater::check_failed_text)?;
+        let emit = TauriEmit(app.clone());
+        updater::run_check(&updates, &source, true, &emit).await
+    }
+
+    /// "Install update": refused while a session runs. The download runs
+    /// on its own task. The steps come as `update://event`.
+    #[tauri::command]
+    pub fn install_update(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+        let (id, pending) = super::begin_update_install(&state)?;
+        let emit: Arc<dyn UpdateEmit> = Arc::new(TauriEmit(app.clone()));
+        emit.emit_update(&state.updates.status());
+        updater::start_download(
+            Arc::clone(&state.updates),
+            id,
+            pending,
+            emit,
+            updater::READY_PAUSE,
+        );
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub fn cancel_update(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+        state.updates.cancel()?;
+        TauriEmit(app.clone()).emit_update(&state.updates.status());
+        Ok(())
+    }
+
+    /// "Later": hides the note until the next start or manual check.
+    #[tauri::command]
+    pub fn hide_update(app: AppHandle, state: tauri::State<'_, AppState>) {
+        state.updates.hide();
+        TauriEmit(app.clone()).emit_update(&state.updates.status());
     }
 
     #[tauri::command]
@@ -4585,5 +4713,143 @@ mod tests {
         let types = s.emit.types();
         assert!(types.contains(&"started".to_string()), "{types:?}");
         assert_eq!(types.last().unwrap(), "stopped");
+    }
+
+    // The update install and the session: the gate of the capture lock.
+
+    use crate::updater::tests::{refusal, with_offer, Download, FakePending};
+
+    /// `setup` with a release-build update state that offers version 0.3.0.
+    fn setup_with_offer() -> (Setup, Arc<FakePending>) {
+        let Setup {
+            _dir,
+            file,
+            state,
+            starter,
+            keys,
+            emit,
+        } = setup(&[]);
+        let pending = FakePending::new(Download::Forever);
+        let state = state.with_updates(with_offer(pending.clone()));
+        (
+            Setup {
+                _dir,
+                file,
+                state,
+                starter,
+                keys,
+                emit,
+            },
+            pending,
+        )
+    }
+
+    fn install_refusal(state: &AppState) -> String {
+        match begin_update_install(state) {
+            Err(text) => text,
+            Ok(_) => panic!("the install was not refused"),
+        }
+    }
+
+    #[test]
+    fn test_install_is_refused_while_a_session_runs() {
+        let (s, _) = setup_with_offer();
+        s.start(false).unwrap();
+        assert_eq!(install_refusal(&s.state), updater::STOP_FIRST);
+        assert_eq!(s.state.updates.status().phase, "available");
+        stop_session(&s.state).unwrap();
+        begin_update_install(&s.state).unwrap();
+        assert_eq!(s.state.updates.status().phase, "downloading");
+    }
+
+    #[test]
+    fn test_install_is_refused_while_a_session_starts() {
+        let (s, _) = setup_with_offer();
+        let result = Arc::new(Mutex::new(None));
+        let out = result.clone();
+        *lock(&s.state.start_hook) = Some(Box::new(move |state: &AppState| {
+            *lock(&out) = Some(install_refusal(state));
+        }));
+        s.start(true).unwrap();
+        assert_eq!(
+            lock(&result).take().as_deref(),
+            Some(updater::STOP_FIRST),
+            "the hook ran"
+        );
+        stop_session(&s.state).unwrap();
+    }
+
+    #[test]
+    fn test_a_session_does_not_start_during_the_update() {
+        let (s, _) = setup_with_offer();
+        begin_update_install(&s.state).unwrap();
+        assert_eq!(s.start(false).unwrap_err(), updater::IN_PROGRESS);
+        assert!(lock(&s.starter.sessions).is_empty());
+        assert!(!s.state.session_active());
+        // After a cancel the session starts.
+        s.state.updates.cancel().unwrap();
+        s.start(false).unwrap();
+        stop_session(&s.state).unwrap();
+    }
+
+    /// A start and an install at the same time: never both.
+    #[test]
+    fn test_a_start_and_an_install_never_both_go_through() {
+        for _ in 0..40 {
+            let (s, _) = setup_with_offer();
+            let s = Arc::new(s);
+            let barrier = Arc::new(std::sync::Barrier::new(2));
+            let (a, b) = (s.clone(), barrier.clone());
+            let starter = std::thread::spawn(move || {
+                b.wait();
+                a.start(true)
+            });
+            barrier.wait();
+            let install = begin_update_install(&s.state).map(|_| ());
+            let start = starter.join().unwrap();
+            assert!(
+                start.is_err() || install.is_err(),
+                "both went through: {start:?} {install:?}"
+            );
+            assert!(start.is_ok() || install.is_ok(), "{start:?} {install:?}");
+            stop_session(&s.state).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_shutdown_stops_the_download() {
+        let (s, _) = setup_with_offer();
+        begin_update_install(&s.state).unwrap();
+        shutdown(&s.state);
+        assert_eq!(s.state.updates.status().phase, "available");
+        // A new try works.
+        begin_update_install(&s.state).unwrap();
+        assert_eq!(refusal(&s.state.updates), updater::IN_PROGRESS);
+    }
+
+    #[test]
+    fn test_the_update_switch_needs_no_session_restart() {
+        let s = setup(&[]);
+        assert_eq!(updates_check_enabled(&s.state), Ok(true));
+        s.start(false).unwrap();
+        let flag = |on| edit(UPDATES_CHECK_KEY, crate::dto::ValueDto::Flag(on));
+        let result = save_config(&s.state, vec![flag(false)]).unwrap();
+        assert!(result.written);
+        assert!(!result.restart_needed);
+        assert_eq!(updates_check_enabled(&s.state), Ok(false));
+        // A key that the session uses still needs a restart.
+        let result = save_config(
+            &s.state,
+            vec![
+                flag(true),
+                edit("matching.threshold", crate::dto::ValueDto::Number(0.85)),
+            ],
+        )
+        .unwrap();
+        assert!(result.restart_needed);
+        stop_session(&s.state).unwrap();
+        // A file that does not load: no automatic check.
+        std::fs::write(&s.file, "not = [toml").unwrap();
+        assert!(updates_check_enabled(&s.state).is_err());
     }
 }

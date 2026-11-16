@@ -123,6 +123,11 @@ export interface DiagnosticsConfig {
   save_audio_dir: string
 }
 
+/** `[updates]`: the switch of the automatic update check. */
+export interface UpdatesConfig {
+  check: boolean
+}
+
 /** `ConfigDto`: all settings. */
 export interface Config {
   path: string
@@ -143,6 +148,7 @@ export interface Config {
   always_listening: AlwaysListeningConfig
   stt: SttConfig
   diagnostics: DiagnosticsConfig
+  updates: UpdatesConfig
 }
 
 /** `ReportDto`: the counts of the loaded data. */
@@ -420,10 +426,51 @@ export interface TableSave {
   restart_needed: boolean
 }
 
+/** The step of the update. */
+export type UpdatePhase =
+  | 'idle'
+  | 'checking'
+  | 'up_to_date'
+  | 'available'
+  | 'downloading'
+  | 'ready'
+  | 'check_failed'
+
+/** `UpdateStatusDto`: the state of the update check and install. */
+export interface UpdateStatus {
+  /** The version of this program. */
+  current_version: string
+  /** A build with debug assertions: it never checks. */
+  developer_build: boolean
+  phase: UpdatePhase
+  /** The offered version, with `available`, `downloading`, and `ready`. */
+  version: string | null
+  /** The release notes of the offered version, as plain text. */
+  notes: string | null
+  /** The publish date of the offered version (RFC 3339). */
+  date: string | null
+  /** The release page of the offered version. */
+  release_page: string | null
+  /** The bytes of the download so far. */
+  received: number
+  /** The size of the download, when the server sent it. */
+  total: number | null
+  /** Why the last check failed, with `check_failed`. */
+  cause: string | null
+  /** The text of the last failed download or install of the offer. */
+  error: string | null
+  /** The end of the last check, in milliseconds since 1970. */
+  checked_at: number | null
+  /** True after "Later", until the next manual check. */
+  hidden: boolean
+}
+
 /** The name of the Tauri event of the session. */
 export const SESSION_EVENT = 'session://event'
 /** The name of the Tauri event of the model download. */
 export const MODEL_EVENT = 'model://event'
+/** The name of the Tauri event of the update. */
+export const UPDATE_EVENT = 'update://event'
 
 /**
  * Calls one command. Tauri rejects with the error text of the command. This
@@ -652,6 +699,44 @@ export function setDiagnostics(part: DiagnosticsPart, on: boolean): Promise<Save
 /** Opens the folder of the part. The program takes the folder from the saved file. */
 export function openFolder(part: DiagnosticsPart): Promise<void> {
   return call<void>('open_folder', { part })
+}
+
+export function updateStatus(): Promise<UpdateStatus> {
+  return call<UpdateStatus>('update_status')
+}
+
+/**
+ * Asks the update server for a newer version. It also works when
+ * `updates.check` is false. A failure comes as the error text.
+ */
+export function checkForUpdates(): Promise<UpdateStatus> {
+  return call<UpdateStatus>('check_for_updates')
+}
+
+/**
+ * Starts the download of the offered update and returns at once. The steps
+ * come as `update://event`. The program refuses it while a session runs.
+ */
+export function installUpdate(): Promise<void> {
+  return call<void>('install_update')
+}
+
+export function cancelUpdate(): Promise<void> {
+  return call<void>('cancel_update')
+}
+
+/** "Later": hides the note until the next start or manual check. */
+export function hideUpdate(): Promise<void> {
+  return call<void>('hide_update')
+}
+
+/** Calls `handler` for each change of the update state. The result removes the listener. */
+export async function onUpdateEvent(handler: (status: UpdateStatus) => void): Promise<() => void> {
+  try {
+    return await listen<UpdateStatus>(UPDATE_EVENT, (event) => handler(event.payload))
+  } catch (error) {
+    throw toError(error)
+  }
 }
 
 /** The name of the Tauri event of "Start..." in the tray menu. */

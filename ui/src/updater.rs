@@ -68,6 +68,8 @@ pub const READY_PAUSE: Duration = Duration::from_secs(2);
 /// of a key change: `tauri.conf.json` has the NEW key, and the release is
 /// signed with the OLD key of `ui/signing-key.pub`. A test checks the rule.
 /// See "A new key (rotation)" in docs/DEVELOPMENT.md.
+/// Only the test reads it: the program itself does not change.
+#[cfg(test)]
 pub const BRIDGE_RELEASE: bool = false;
 /// The longest text of the release notes that the window gets.
 pub const MAX_NOTES_CHARS: usize = 8_000;

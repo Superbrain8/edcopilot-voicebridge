@@ -32,6 +32,8 @@ tar = { version = "=0.4.46", default-features = false }
 # uses it: the capability file gives the page no updater permission. No
 # `zip` feature: the program installs only the Tauri 2 installer, never a
 # Tauri 1 archive.
+# The version rule of the update check (`updater::is_offered`).
+semver = "=1.0.28"
 tauri-plugin-updater = { version = "=2.14.1", default-features = false, features = [
   "rustls-tls",
   "system-proxy",
@@ -55,3 +57,5 @@ tauri = { version = "=2.12.5", features = ["tray-icon", "test"] }
 edcopilot-voicebridge-core = { path = "../core", features = ["test-support"] }
 tempfile = "3"
 tiny_http = "=0.12.0"
+# The test that decodes the public updater key of tauri.conf.json.
+base64 = "=0.22.1"

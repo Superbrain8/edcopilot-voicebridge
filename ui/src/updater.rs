@@ -11,11 +11,14 @@
 //!   `tauri.conf.json`. `Update::download` checks it, and `Update::install`
 //!   checks it again before it starts the installer. No code path here runs
 //!   a file without these checks.
-//! - Only a newer version counts: the plugin compares the versions, and this
-//!   program sets no comparator of its own.
-//! - The update address is fixed in `tauri.conf.json`. The tests give their
-//!   address and key as arguments of `PluginSource::new`, never through an
-//!   environment variable.
+//! - Only a newer release version counts (`is_offered`): no pre-release, no
+//!   equal or older version, and build metadata does not count.
+//! - The update address and the key are fixed in `tauri.conf.json`. The
+//!   download address must be an asset of the project (`DOWNLOAD_PREFIX`).
+//!   Only a test build can give another address, key, or install action
+//!   (`PluginSource::for_test`).
+//! - The window program has no log file. The Diagnostics screen shows the
+//!   result of the last check, and the Status screen the update steps.
 //!
 //! Locks: `Updates::inner` is the last lock. Its holder takes no other lock
 //! and calls no other code. A start of a session takes it while it holds
@@ -23,8 +26,9 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::task::Poll;
 use std::time::Duration;
 
 use crate::dto::UpdateStatusDto;
@@ -37,6 +41,10 @@ use crate::state::lock;
 #[cfg(test)]
 pub const ENDPOINT: &str =
     "https://github.com/Superbrain8/edcopilot-voicebridge/releases/latest/download/latest.json";
+/// Each download address in `latest.json` must start with this text: an
+/// asset of a release of the project.
+pub const DOWNLOAD_PREFIX: &str =
+    "https://github.com/Superbrain8/edcopilot-voicebridge/releases/download/";
 /// The release page of a version is this text and the version.
 pub const RELEASE_PAGE_PREFIX: &str =
     "https://github.com/Superbrain8/edcopilot-voicebridge/releases/tag/v";
@@ -45,11 +53,15 @@ pub const RELEASE_PAGE_PREFIX: &str =
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 /// The time limit of the download of the installer.
 pub const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+/// The largest installer that the program downloads, in bytes.
+pub const MAX_DOWNLOAD_BYTES: u64 = 200_000_000;
 /// The first automatic check comes this time after the start.
 pub const FIRST_CHECK_DELAY: Duration = Duration::from_secs(10);
-/// The time between two automatic checks.
-pub const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
-/// The time that the window shows `READY` before the program closes.
+/// The time between two looks at the clock of the automatic check.
+pub const TICK: Duration = Duration::from_secs(30 * 60);
+/// The time between two automatic checks, by the clock of the computer.
+pub const CHECK_INTERVAL_MS: u64 = 24 * 60 * 60 * 1000;
+/// The time that the window shows the ready text before the program closes.
 pub const READY_PAUSE: Duration = Duration::from_secs(2);
 /// The longest text of the release notes that the window gets.
 pub const MAX_NOTES_CHARS: usize = 8_000;
@@ -65,6 +77,11 @@ pub const IN_PROGRESS: &str = "The update is in progress.";
 pub const NO_UPDATE: &str = "There is no update to install. Check for updates first.";
 /// The text of a cancel after the download is complete.
 pub const TOO_LATE: &str = "The download is complete. You cannot stop the update now.";
+/// The text of a signature that is not correct. The user must not install
+/// this version by hand: the file can be changed.
+pub const SIGNATURE_FAILED: &str = "The update did not install: the signature of the \
+     installer is not correct. The program is not changed. Do not install this version by \
+     hand. Tell the project on its Issues page.";
 
 /// The text of a manual check that failed.
 pub fn check_failed_text(cause: Cause) -> String {
@@ -76,6 +93,9 @@ pub fn check_failed_text(cause: Cause) -> String {
 
 /// The text of a download or an install that failed.
 pub fn install_failed_text(cause: Cause) -> String {
+    if cause == Cause::Signature {
+        return SIGNATURE_FAILED.to_string();
+    }
     format!(
         "The update did not install: {}. The program is not changed.",
         cause.text()
@@ -85,6 +105,15 @@ pub fn install_failed_text(cause: Cause) -> String {
 /// The release page of a version.
 pub fn release_page(version: &str) -> String {
     format!("{RELEASE_PAGE_PREFIX}{version}")
+}
+
+/// True when the program offers `release` to a program of version
+/// `current`: a release version (no pre-release part) with a higher major,
+/// minor, or patch number. Build metadata does not count.
+pub fn is_offered(current: &semver::Version, release: &semver::Version) -> bool {
+    release.pre.is_empty()
+        && (release.major, release.minor, release.patch)
+            > (current.major, current.minor, current.patch)
 }
 
 /// Why a check, a download, or an install failed. The window shows the
@@ -121,8 +150,8 @@ impl Cause {
 /// A future that can go to another thread.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// The progress callback of a download: the bytes so far and the size, if
-/// the server sent it.
+/// The progress callback of a download: the size of one more part, and the
+/// size of the file, if the server sent it.
 pub type Progress<'a> = &'a (dyn Fn(u64, Option<u64>) + Send + Sync);
 
 /// An update that the server offers. The plugin gives the real one.
@@ -155,9 +184,8 @@ pub trait UpdateSource: Send + Sync {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Phase {
     Idle,
-    Checking {
-        manual: bool,
-    },
+    /// A check runs, and the window has no offer to show.
+    Checking,
     UpToDate,
     Available,
     Downloading {
@@ -173,16 +201,20 @@ pub enum Phase {
 
 struct Inner {
     phase: Phase,
-    /// The phase before the running check.
-    before_check: Phase,
+    /// True while a check runs. An automatic check keeps an offer on the
+    /// screen: the phase stays `Available`.
+    check_running: bool,
+    /// True when a click on "Check for updates" waits for the running check.
+    check_manual: bool,
     /// The offered update, with `Available`, `Downloading`, and `Ready`.
     offer: Option<Found>,
     /// The text of the last failed download or install of the offer.
     install_error: Option<String>,
     /// The end of the last check, in milliseconds since 1970.
     checked_at: Option<u64>,
-    /// True after "Later", until the next manual check.
-    hidden: bool,
+    /// The version of the offer when the user clicked "Later". The note
+    /// stays hidden for this version only, until the next manual check.
+    hidden_version: Option<String>,
     /// The number of the newest download. An older download changes
     /// nothing.
     download: u64,
@@ -223,11 +255,12 @@ impl Updates {
         Updates {
             inner: Mutex::new(Inner {
                 phase: Phase::Idle,
-                before_check: Phase::Idle,
+                check_running: false,
+                check_manual: false,
                 offer: None,
                 install_error: None,
                 checked_at: None,
-                hidden: false,
+                hidden_version: None,
                 download: 0,
                 abort: None,
             }),
@@ -251,7 +284,7 @@ impl Updates {
         let inner = lock(&self.inner);
         let (phase, received, total, cause) = match &inner.phase {
             Phase::Idle => ("idle", 0, None, None),
-            Phase::Checking { .. } => ("checking", 0, None, None),
+            Phase::Checking => ("checking", 0, None, None),
             Phase::UpToDate => ("up_to_date", 0, None, None),
             Phase::Available => ("available", 0, None, None),
             Phase::Downloading { received, total } => ("downloading", *received, *total, None),
@@ -261,6 +294,7 @@ impl Updates {
             }
         };
         let offer = inner.offer.as_ref();
+        let hidden = offer.is_some_and(|o| inner.hidden_version.as_ref() == Some(&o.version));
         UpdateStatusDto {
             current_version: self.current_version.clone(),
             developer_build: self.developer_build,
@@ -274,7 +308,7 @@ impl Updates {
             cause,
             error: inner.install_error.clone(),
             checked_at: inner.checked_at,
-            hidden: inner.hidden,
+            hidden,
         }
     }
 
@@ -284,6 +318,16 @@ impl Updates {
             lock(&self.inner).phase,
             Phase::Downloading { .. } | Phase::Ready
         )
+    }
+
+    /// True when an automatic check is due at the time `now`: before the
+    /// first check, or 24 hours after the end of the last check, by the
+    /// clock of the computer.
+    pub fn auto_check_due(&self, now: u64) -> bool {
+        match lock(&self.inner).checked_at {
+            None => true,
+            Some(at) => now.saturating_sub(at) >= CHECK_INTERVAL_MS,
+        }
     }
 
     /// Marks the start of a check. `Ok(false)`: no check now (a check runs
@@ -299,29 +343,28 @@ impl Updates {
             };
         }
         let mut inner = lock(&self.inner);
-        match inner.phase {
-            Phase::Downloading { .. } | Phase::Ready => {
-                return if manual {
-                    Err(IN_PROGRESS.to_string())
-                } else {
-                    Ok(false)
-                };
-            }
-            Phase::Checking { .. } => {
-                if manual {
-                    // The running check shows its result to this user too.
-                    inner.hidden = false;
-                    inner.phase = Phase::Checking { manual: true };
-                }
-                return Ok(false);
-            }
-            _ => {}
+        if matches!(inner.phase, Phase::Downloading { .. } | Phase::Ready) {
+            return if manual {
+                Err(IN_PROGRESS.to_string())
+            } else {
+                Ok(false)
+            };
         }
         if manual {
-            inner.hidden = false;
+            inner.hidden_version = None;
         }
-        inner.before_check = inner.phase.clone();
-        inner.phase = Phase::Checking { manual };
+        if inner.check_running {
+            // The running check shows its result to this user too.
+            inner.check_manual |= manual;
+            return Ok(false);
+        }
+        inner.check_running = true;
+        inner.check_manual = manual;
+        // An automatic check keeps an offer on the screen. "Install update"
+        // stays possible and uses that offer.
+        if manual || inner.phase != Phase::Available {
+            inner.phase = Phase::Checking;
+        }
         Ok(true)
     }
 
@@ -335,41 +378,47 @@ impl Updates {
     ) -> Result<UpdateStatusDto, String> {
         let failed = {
             let mut inner = lock(&self.inner);
-            let manual = matches!(inner.phase, Phase::Checking { manual: true });
+            let manual = inner.check_manual;
+            inner.check_running = false;
+            inner.check_manual = false;
             inner.checked_at = Some(now);
-            match result {
-                Ok(None) => {
-                    inner.phase = Phase::UpToDate;
-                    inner.offer = None;
-                    inner.install_error = None;
-                    None
-                }
-                Ok(Some(found)) => {
-                    let same = inner
-                        .offer
-                        .as_ref()
-                        .is_some_and(|o| o.version == found.version);
-                    if !same {
-                        inner.install_error = None;
-                    }
-                    inner.phase = Phase::Available;
-                    inner.offer = Some(Found {
-                        version: capped(&found.version, 64),
-                        notes: found.notes.map(|n| capped(&n, MAX_NOTES_CHARS)),
-                        date: found.date.map(|d| capped(&d, 64)),
-                        pending: found.pending,
-                    });
-                    None
-                }
-                Err(cause) => {
-                    if !manual && inner.before_check == Phase::Available && inner.offer.is_some() {
-                        inner.phase = Phase::Available;
-                    } else {
-                        inner.phase = Phase::CheckFailed { cause };
+            if matches!(inner.phase, Phase::Downloading { .. } | Phase::Ready) {
+                // The user started the install of the offer during an
+                // automatic check. The install keeps its offer.
+                None
+            } else {
+                match result {
+                    Ok(None) => {
+                        inner.phase = Phase::UpToDate;
                         inner.offer = None;
                         inner.install_error = None;
+                        None
                     }
-                    manual.then_some(cause)
+                    Ok(Some(found)) => {
+                        let version = capped(&found.version, 64);
+                        let same = inner.offer.as_ref().is_some_and(|o| o.version == version);
+                        if !same {
+                            inner.install_error = None;
+                        }
+                        inner.phase = Phase::Available;
+                        inner.offer = Some(Found {
+                            version,
+                            notes: found.notes.map(|n| capped(&n, MAX_NOTES_CHARS)),
+                            date: found.date.map(|d| capped(&d, 64)),
+                            pending: found.pending,
+                        });
+                        None
+                    }
+                    Err(cause) => {
+                        if !manual && inner.phase == Phase::Available && inner.offer.is_some() {
+                            // The offer of the earlier check stays.
+                        } else {
+                            inner.phase = Phase::CheckFailed { cause };
+                            inner.offer = None;
+                            inner.install_error = None;
+                        }
+                        manual.then_some(cause)
+                    }
                 }
             }
         };
@@ -403,12 +452,17 @@ impl Updates {
     }
 
     /// Keeps the function that stops the download `id`. When that download
-    /// is not the running one any more, the function runs at once.
+    /// was cancelled, the function runs at once. When the download is
+    /// complete (`Ready`), the function is dropped and does not run: the
+    /// task starts the installer.
     pub fn set_abort(&self, id: u64, abort: Box<dyn FnOnce() + Send>) {
         let late = {
             let mut inner = lock(&self.inner);
-            if inner.download == id && matches!(inner.phase, Phase::Downloading { .. }) {
+            let current = inner.download == id;
+            if current && matches!(inner.phase, Phase::Downloading { .. }) {
                 inner.abort = Some(abort);
+                None
+            } else if current && inner.phase == Phase::Ready {
                 None
             } else {
                 Some(abort)
@@ -485,16 +539,13 @@ impl Updates {
         Ok(())
     }
 
-    /// "Later": the window hides the note until the next start of the
-    /// program or the next manual check.
+    /// "Later": the window hides the note of this version until the next
+    /// start of the program or the next manual check. A newer version shows
+    /// the note again.
     pub fn hide(&self) {
-        lock(&self.inner).hidden = true;
+        let mut inner = lock(&self.inner);
+        inner.hidden_version = inner.offer.as_ref().map(|o| o.version.clone());
     }
-}
-
-/// One line for the log of the program: version numbers and results only.
-fn log(line: &str) {
-    eprintln!("update: {line}");
 }
 
 /// Runs one check with `source`, and sends the new state to the window.
@@ -510,55 +561,56 @@ pub async fn run_check(
     }
     emit.emit_update(&updates.status());
     let result = source.check().await;
-    match &result {
-        Ok(None) => log(&format!(
-            "no newer version than {}",
-            updates.current_version
-        )),
-        Ok(Some(found)) => log(&format!(
-            "version {} is available, this is version {}",
-            found.version, updates.current_version
-        )),
-        Err(cause) => log(&format!("the check failed: {}", cause.text())),
-    }
     let status = updates.finish_check(result, now_ms());
     emit.emit_update(&updates.status());
     status
 }
 
-/// The automatic check. `enabled` is `updates.check` of the configuration
-/// in use, or the error text when the file does not load. It never checks
-/// in a developer build, when the switch is off, or when the file does not
-/// load. A failure is quiet: one line in the log.
+/// One tick of the automatic check at the time `now`. `enabled` is
+/// `updates.check` of the configuration in use, or the error text when the
+/// file does not load. It checks only when the check is due, never in a
+/// developer build, never when the switch is off, and never when the file
+/// does not load. A failure is quiet: the Diagnostics screen shows it.
+/// `source` makes the update server only when the check runs.
 pub async fn auto_check(
     updates: &Updates,
-    source: &dyn UpdateSource,
+    source: &dyn Fn() -> Result<Box<dyn UpdateSource>, Cause>,
     enabled: Result<bool, String>,
     emit: &dyn UpdateEmit,
+    now: u64,
 ) {
-    if updates.developer_build() {
-        log("no automatic check: this is a developer build");
+    if updates.developer_build() || enabled != Ok(true) || !updates.auto_check_due(now) {
         return;
     }
-    match enabled {
-        Ok(true) => {
-            let _ = run_check(updates, source, false, emit).await;
+    match source() {
+        Ok(source) => {
+            let _ = run_check(updates, &*source, false, emit).await;
         }
-        Ok(false) => log("no automatic check: updates.check is false"),
-        Err(_) => log("no automatic check: the configuration does not load"),
+        Err(cause) => {
+            if updates.begin_check(false) == Ok(true) {
+                let _ = updates.finish_check(Err(cause), now);
+                emit.emit_update(&updates.status());
+            }
+        }
     }
 }
 
+/// Puts the window back after an installer that did not start: the tray
+/// icon and the main window. The tests give a function that records.
+pub type RestoreUi = Arc<dyn Fn() + Send + Sync>;
+
 /// Downloads the update of `begin_download`, then starts the installer
 /// after `pause`. The installer ends the program. A failure or a cancel
-/// leaves the offer. `spawn_blocking` runs the pause and the install off
-/// the async threads.
+/// leaves the offer. When the installer does not start, `restore` shows the
+/// tray icon and the window again. `spawn_blocking` runs the pause and the
+/// install off the async threads.
 pub async fn run_download(
     updates: Arc<Updates>,
     id: u64,
     pending: Arc<dyn PendingUpdate>,
     emit: Arc<dyn UpdateEmit>,
     pause: Duration,
+    restore: RestoreUi,
 ) {
     let received = AtomicU64::new(0);
     let progress = |chunk: u64, total: Option<u64>| {
@@ -576,7 +628,6 @@ pub async fn run_download(
             bytes
         }
         Err(cause) => {
-            log(&format!("the download failed: {}", cause.text()));
             updates.finish_download(id, Err(cause));
             // The state is new, or the same after a cancel: one more
             // event does no harm.
@@ -584,7 +635,6 @@ pub async fn run_download(
             return;
         }
     };
-    log("the signature is correct, the installer starts");
     emit.emit_update(&updates.status());
     let install = {
         let pending = Arc::clone(&pending);
@@ -598,8 +648,8 @@ pub async fn run_download(
         Ok(Err(cause)) => cause,
         Err(_) => Cause::Unknown,
     };
-    log(&format!("the install failed: {}", cause.text()));
     updates.install_failed(id, cause);
+    restore();
     emit.emit_update(&updates.status());
 }
 
@@ -610,9 +660,16 @@ pub fn start_download(
     pending: Arc<dyn PendingUpdate>,
     emit: Arc<dyn UpdateEmit>,
     pause: Duration,
+    restore: RestoreUi,
 ) {
-    let task =
-        tauri::async_runtime::spawn(run_download(Arc::clone(&updates), id, pending, emit, pause));
+    let task = tauri::async_runtime::spawn(run_download(
+        Arc::clone(&updates),
+        id,
+        pending,
+        emit,
+        pause,
+        restore,
+    ));
     updates.set_abort(id, Box::new(move || task.abort()));
 }
 
@@ -650,58 +707,89 @@ pub enum Stage {
     Install,
 }
 
-/// The function that starts the installer. The real one is
-/// `Update::install`: it checks the signature again, starts the installer,
-/// and ends the program. The tests give a function that only records.
+/// The install action of the tests: it replaces `Update::install`, so that
+/// no test runs a file.
+#[cfg(test)]
 pub type InstallAction = Arc<
     dyn Fn(&tauri_plugin_updater::Update, &[u8]) -> Result<(), tauri_plugin_updater::Error>
         + Send
         + Sync,
 >;
 
-/// The real install: the plugin.
-pub fn plugin_install() -> InstallAction {
-    Arc::new(|update, bytes| update.install(bytes))
-}
-
 /// The update server through the plugin.
 pub struct PluginSource {
     updater: tauri_plugin_updater::Updater,
+    /// `DOWNLOAD_PREFIX`. Only a test build has another value.
+    allowed_prefix: String,
+    /// `MAX_DOWNLOAD_BYTES`. Only a test build has another value.
+    max_bytes: u64,
+    #[cfg(test)]
     install: InstallAction,
 }
 
-/// An address and a public key for a test server. `pubkey` `None` keeps
-/// the key of the configuration.
+/// The test server of `PluginSource::for_test`: its address, a key (`None`
+/// keeps the key of the configuration), the start of its download
+/// addresses, and a size limit.
+#[cfg(test)]
 pub struct TestServer {
     pub endpoint: url::Url,
     pub pubkey: Option<String>,
+    pub allowed_prefix: String,
+    pub max_bytes: u64,
+}
+
+/// The plugin builder with the rules of the program: the check time limit,
+/// the version rule of `is_offered`, and `before_exit`.
+fn builder<R: tauri::Runtime, M: tauri::Manager<R>>(
+    app: &M,
+    before_exit: impl Fn() + Send + Sync + 'static,
+) -> tauri_plugin_updater::UpdaterBuilder {
+    use tauri_plugin_updater::UpdaterExt;
+    app.updater_builder()
+        .timeout(CHECK_TIMEOUT)
+        .version_comparator(|current, release| is_offered(&current, &release.version))
+        .on_before_exit(before_exit)
 }
 
 impl PluginSource {
     /// The plugin with the address and the key of `tauri.conf.json`.
-    /// `test` replaces them (only the tests give it). `before_exit` runs
-    /// just before the installer starts and the program ends.
+    /// `before_exit` runs just before the installer starts.
     pub fn new<R: tauri::Runtime, M: tauri::Manager<R>>(
         app: &M,
-        test: Option<TestServer>,
         before_exit: impl Fn() + Send + Sync + 'static,
+    ) -> Result<PluginSource, Cause> {
+        let updater = builder(app, before_exit)
+            .build()
+            .map_err(|e| cause_of(&e, Stage::Check))?;
+        Ok(PluginSource {
+            updater,
+            allowed_prefix: DOWNLOAD_PREFIX.to_string(),
+            max_bytes: MAX_DOWNLOAD_BYTES,
+            #[cfg(test)]
+            install: Arc::new(|update, bytes| update.install(bytes)),
+        })
+    }
+
+    /// The plugin with a test server and a test install action.
+    #[cfg(test)]
+    pub fn for_test<R: tauri::Runtime, M: tauri::Manager<R>>(
+        app: &M,
+        server: TestServer,
         install: InstallAction,
     ) -> Result<PluginSource, Cause> {
-        use tauri_plugin_updater::UpdaterExt;
-        let mut builder = app
-            .updater_builder()
-            .timeout(CHECK_TIMEOUT)
-            .on_before_exit(before_exit);
-        if let Some(test) = test {
-            builder = builder
-                .endpoints(vec![test.endpoint])
-                .map_err(|e| cause_of(&e, Stage::Check))?;
-            if let Some(pubkey) = test.pubkey {
-                builder = builder.pubkey(pubkey);
-            }
+        let mut builder = builder(app, || {})
+            .endpoints(vec![server.endpoint])
+            .map_err(|e| cause_of(&e, Stage::Check))?;
+        if let Some(pubkey) = server.pubkey {
+            builder = builder.pubkey(pubkey);
         }
         let updater = builder.build().map_err(|e| cause_of(&e, Stage::Check))?;
-        Ok(PluginSource { updater, install })
+        Ok(PluginSource {
+            updater,
+            allowed_prefix: server.allowed_prefix,
+            max_bytes: server.max_bytes,
+            install,
+        })
     }
 }
 
@@ -713,23 +801,34 @@ impl UpdateSource for PluginSource {
                 .check()
                 .await
                 .map_err(|e| cause_of(&e, Stage::Check))?;
-            Ok(update.map(|mut update| {
-                // The check has its time limit. The download has its own.
-                update.timeout = Some(DOWNLOAD_TIMEOUT);
-                let date = update
-                    .raw_json
-                    .get("pub_date")
-                    .and_then(|d| d.as_str())
-                    .map(str::to_string);
-                Found {
-                    version: update.version.clone(),
-                    notes: update.body.clone(),
-                    date,
-                    pending: Arc::new(PluginPending {
-                        update,
-                        install: Arc::clone(&self.install),
-                    }),
-                }
+            let Some(mut update) = update else {
+                return Ok(None);
+            };
+            // Only an asset of a release of the project.
+            if !update
+                .download_url
+                .as_str()
+                .starts_with(&self.allowed_prefix)
+            {
+                return Err(Cause::BadData);
+            }
+            // The check has its time limit. The download has its own.
+            update.timeout = Some(DOWNLOAD_TIMEOUT);
+            let date = update
+                .raw_json
+                .get("pub_date")
+                .and_then(|d| d.as_str())
+                .map(str::to_string);
+            Ok(Some(Found {
+                version: update.version.clone(),
+                notes: update.body.clone(),
+                date,
+                pending: Arc::new(PluginPending {
+                    update,
+                    max_bytes: self.max_bytes,
+                    #[cfg(test)]
+                    install: Arc::clone(&self.install),
+                }),
             }))
         })
     }
@@ -738,22 +837,61 @@ impl UpdateSource for PluginSource {
 /// An update of the plugin.
 struct PluginPending {
     update: tauri_plugin_updater::Update,
+    max_bytes: u64,
+    #[cfg(test)]
     install: InstallAction,
 }
 
 impl PendingUpdate for PluginPending {
     fn download<'a>(&'a self, progress: Progress<'a>) -> BoxFuture<'a, Result<Vec<u8>, Cause>> {
         Box::pin(async move {
+            let max = self.max_bytes;
+            let received = AtomicU64::new(0);
+            let too_large = AtomicBool::new(false);
             // `download` checks the signature before it gives the bytes.
-            self.update
-                .download(|chunk, total| progress(chunk as u64, total), || {})
-                .await
-                .map_err(|e| cause_of(&e, Stage::Download))
+            let download = self.update.download(
+                |chunk, total| {
+                    let chunk = chunk as u64;
+                    let now = received.fetch_add(chunk, Ordering::SeqCst) + chunk;
+                    if now > max || total.is_some_and(|t| t > max) {
+                        too_large.store(true, Ordering::SeqCst);
+                    }
+                    progress(chunk, total);
+                },
+                || {},
+            );
+            let mut download = std::pin::pin!(download);
+            // A file above the limit stops the download: the drop of the
+            // future ends the request.
+            std::future::poll_fn(|cx| {
+                if too_large.load(Ordering::SeqCst) {
+                    return Poll::Ready(Err(Cause::Download));
+                }
+                match download.as_mut().poll(cx) {
+                    Poll::Ready(_) if too_large.load(Ordering::SeqCst) => {
+                        Poll::Ready(Err(Cause::Download))
+                    }
+                    Poll::Ready(result) => {
+                        Poll::Ready(result.map_err(|e| cause_of(&e, Stage::Download)))
+                    }
+                    Poll::Pending if too_large.load(Ordering::SeqCst) => {
+                        Poll::Ready(Err(Cause::Download))
+                    }
+                    Poll::Pending => Poll::Pending,
+                }
+            })
+            .await
         })
     }
 
     fn install(&self, bytes: Vec<u8>) -> Result<(), Cause> {
-        (self.install)(&self.update, &bytes).map_err(|e| cause_of(&e, Stage::Install))
+        // `install` checks the signature again, starts the installer, and
+        // ends the program.
+        #[cfg(not(test))]
+        let result = self.update.install(&bytes);
+        #[cfg(test)]
+        let result = (self.install)(&self.update, &bytes);
+        result.map_err(|e| cause_of(&e, Stage::Install))
     }
 }
 

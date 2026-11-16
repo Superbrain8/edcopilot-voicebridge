@@ -141,6 +141,15 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
+/// Shows or hides the tray icon. A hidden icon leaves no ghost icon in the
+/// notification area when the program ends without a clean exit (the
+/// installer start of an update).
+pub fn set_icon_visible(app: &AppHandle, visible: bool) {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_visible(visible);
+    }
+}
+
 /// Sets the tooltip and the "Stop" entry from the status of the session.
 /// Call it on the main thread, or through `refresh_later`.
 pub fn refresh(app: &AppHandle) {

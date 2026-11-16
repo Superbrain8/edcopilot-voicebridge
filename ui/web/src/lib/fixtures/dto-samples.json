@@ -602,7 +602,7 @@
       "received": 0,
       "total": null,
       "cause": null,
-      "error": "The update did not install: the signature of the installer is not correct. The program is not changed.",
+      "error": "The update did not install: the signature of the installer is not correct. The program is not changed. Do not install this version by hand. Tell the project on its Issues page.",
       "checked_at": 1796112000000,
       "hidden": false
     },

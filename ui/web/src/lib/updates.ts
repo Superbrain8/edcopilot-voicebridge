@@ -39,8 +39,11 @@ export function initialUpdateState(): UpdateState {
 export const STOP_FIRST = 'Stop the session first.'
 /** The text after the download and the signature check. */
 export const READY_TEXT = 'The update is ready. The program closes and the installer starts.'
+/** The label of the switch on the Setup screen. */
+export const SWITCH_LABEL = 'Check for updates at the start and one time each day'
 /** The help of the switch on the Setup screen. */
-export const SWITCH_HELP = 'The program asks the GitHub page of the project for the newest version. It sends no data about you.'
+export const SWITCH_HELP =
+  'The program asks the GitHub page of the project for the newest version. It sends no data about you. GitHub sees your internet address, as each web site does.'
 /** The Diagnostics line when the switch is off and the program did not check. */
 export const SWITCH_OFF = 'The program does not check for updates (updates.check is false).'
 /** The Diagnostics line of a developer build. */

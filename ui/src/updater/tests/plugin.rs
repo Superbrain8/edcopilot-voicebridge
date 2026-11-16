@@ -144,18 +144,33 @@ struct Run {
 
 /// Checks against the local server with `manifest`, then (when the check
 /// offers an update) downloads it and runs the recording install action.
-/// `pubkey` `None` keeps the key of `tauri.conf.json`.
+/// `pubkey` `None` keeps the key of `tauri.conf.json`. The download
+/// addresses of the local server pass the address rule.
 fn run(manifest: impl Fn(u16) -> String + Send + 'static, pubkey: Option<String>) -> Run {
+    run_with(manifest, pubkey, None, MAX_DOWNLOAD_BYTES)
+}
+
+/// `run` with the start of the allowed download addresses (`None`: the
+/// local server) and a size limit.
+fn run_with(
+    manifest: impl Fn(u16) -> String + Send + 'static,
+    pubkey: Option<String>,
+    allowed_prefix: Option<&str>,
+    max_bytes: u64,
+) -> Run {
     let server = Server::start(manifest);
     let app = mock_app();
     let recorder = Arc::new(Recorder::default());
-    let source = PluginSource::new(
+    let source = PluginSource::for_test(
         &app,
-        Some(TestServer {
+        TestServer {
             endpoint: server.endpoint(),
             pubkey,
-        }),
-        || {},
+            allowed_prefix: allowed_prefix
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("http://127.0.0.1:{}/", server.port)),
+            max_bytes,
+        },
         recorder.action(),
     )
     .unwrap();
@@ -169,6 +184,7 @@ fn run(manifest: impl Fn(u16) -> String + Send + 'static, pubkey: Option<String>
             pending,
             Arc::new(FakeEmit::default()),
             Duration::ZERO,
+            counting_restore().0,
         ));
     }
     Run {
@@ -266,7 +282,16 @@ fn test_the_key_of_the_project_refuses_the_test_file() {
 /// date, also with a correct signature.
 #[test]
 fn test_the_same_or_an_older_version_is_up_to_date() {
-    for version in ["0.1.0", "v0.1.0", "0.0.9", "0.1.0-beta.1"] {
+    // A pre-release is never offered, also when it is newer. Build metadata
+    // does not make a version newer.
+    for version in [
+        "0.1.0",
+        "v0.1.0",
+        "0.0.9",
+        "0.1.0-beta.1",
+        "0.9.0-beta.1",
+        "0.1.0+build.5",
+    ] {
         let run = run(
             move |port| {
                 manifest(
@@ -318,13 +343,14 @@ fn test_a_missing_file_on_the_server_gives_a_clear_cause() {
     let url: url::Url = format!("http://127.0.0.1:{}/absent.json", server.port)
         .parse()
         .unwrap();
-    let source = PluginSource::new(
+    let source = PluginSource::for_test(
         &app,
-        Some(TestServer {
+        TestServer {
             endpoint: url,
             pubkey: Some(test_pubkey()),
-        }),
-        || {},
+            allowed_prefix: DOWNLOAD_PREFIX.to_string(),
+            max_bytes: MAX_DOWNLOAD_BYTES,
+        },
         Arc::new(Recorder::default()).action(),
     )
     .unwrap();
@@ -341,19 +367,54 @@ fn test_no_server_gives_a_clear_cause() {
         listener.local_addr().unwrap().port()
     };
     let app = mock_app();
-    let source = PluginSource::new(
+    let source = PluginSource::for_test(
         &app,
-        Some(TestServer {
+        TestServer {
             endpoint: format!("http://127.0.0.1:{port}/latest.json")
                 .parse()
                 .unwrap(),
             pubkey: Some(test_pubkey()),
-        }),
-        || {},
+            allowed_prefix: DOWNLOAD_PREFIX.to_string(),
+            max_bytes: MAX_DOWNLOAD_BYTES,
+        },
         Arc::new(Recorder::default()).action(),
     )
     .unwrap();
     let updates = Updates::new("0.1.0", false);
     let error = block_on(run_check(&updates, &source, true, &FakeEmit::default())).unwrap_err();
     assert_eq!(error, check_failed_text(Cause::Connection));
+}
+
+/// The download address must be an asset of the project. The real rule
+/// refuses the address of the local server.
+#[test]
+fn test_a_download_address_outside_the_project_is_refused() {
+    let run = run_with(
+        signed("0.9.0", "fake-installer.bin", "fake-installer.bin.sig"),
+        Some(test_pubkey()),
+        Some(DOWNLOAD_PREFIX),
+        MAX_DOWNLOAD_BYTES,
+    );
+    assert_eq!(run.check.unwrap_err(), check_failed_text(Cause::BadData));
+    assert_eq!(run.updates.status().phase, "check_failed");
+    assert_eq!(run.recorder.count(), 0);
+    assert!(DOWNLOAD_PREFIX.starts_with("https://github.com/"));
+}
+
+/// A file above the size limit stops the download.
+#[test]
+fn test_a_file_above_the_size_limit_stops_the_download() {
+    let run = run_with(
+        signed("0.9.0", "fake-installer.bin", "fake-installer.bin.sig"),
+        Some(test_pubkey()),
+        None,
+        10,
+    );
+    run.check.unwrap();
+    assert_eq!(run.recorder.count(), 0);
+    assert_eq!(
+        run.updates.status().error.as_deref(),
+        Some(install_failed_text(Cause::Download).as_str())
+    );
+    assert_eq!(MAX_DOWNLOAD_BYTES, 200_000_000);
 }

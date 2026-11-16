@@ -31,7 +31,7 @@
   import { sessionStore as session } from '../lib/session'
   import { profileField } from '../lib/profile'
   import { sentence } from '../lib/format'
-  import { SWITCH_HELP } from '../lib/updates'
+  import { SWITCH_HELP, SWITCH_LABEL } from '../lib/updates'
 
   const cores = logicalCores()
 
@@ -672,7 +672,7 @@
               aria-invalid={problemsOf('updates.check').length > 0}
               aria-describedby={describedBy('updates.check', 'updates-help')}
             />
-            Check for updates at the start
+            {SWITCH_LABEL}
           </label>
           <p class="help" id="updates-help">{SWITCH_HELP}</p>
           {@render fieldError('updates.check')}

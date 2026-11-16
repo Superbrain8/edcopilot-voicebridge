@@ -18,6 +18,7 @@ import {
   READY_TEXT,
   STOP_FIRST,
   SWITCH_HELP,
+  SWITCH_LABEL,
   SWITCH_OFF,
   type UpdateApi,
 } from './updates'
@@ -87,10 +88,11 @@ describe('the update texts', () => {
     expect(READY_TEXT).toBe('The update is ready. The program closes and the installer starts.')
     expect(STOP_FIRST).toBe('Stop the session first.')
     expect(SWITCH_HELP).toBe(
-      'The program asks the GitHub page of the project for the newest version. It sends no data about you.',
+      'The program asks the GitHub page of the project for the newest version. It sends no data about you. GitHub sees your internet address, as each web site does.',
     )
+    expect(SWITCH_LABEL).toBe('Check for updates at the start and one time each day')
     expect(S.install_failed.error).toBe(
-      'The update did not install: the signature of the installer is not correct. The program is not changed.',
+      'The update did not install: the signature of the installer is not correct. The program is not changed. Do not install this version by hand. Tell the project on its Issues page.',
     )
   })
 
@@ -196,6 +198,9 @@ describe('the update store', () => {
     await store.later()
     expect(fake.calls.hide).toBe(1)
     expect(noteShown(state().status)).toBe(false)
+    // The program finds a newer version later: the note shows again.
+    fake.emit({ ...S.available, version: '0.4.0', release_page: null, hidden: false })
+    expect(noteShown(state().status)).toBe(true)
   })
 
   it('cancel asks the program', async () => {

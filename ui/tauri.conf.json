@@ -47,7 +47,7 @@
   },
   "bundle": {
     "active": true,
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "targets": ["nsis"],
     "shortDescription": "Voice commands for EDCoPilot",
     "license": "GPL-3.0-or-later",

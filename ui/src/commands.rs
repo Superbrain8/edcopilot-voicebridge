@@ -1315,25 +1315,39 @@ pub mod ipc {
     /// The update server of the plugin, with the address and the key of
     /// `tauri.conf.json`. Just before the installer starts, the program
     /// stops the session and ends the tray icon.
+    ///
+    /// The plugin runs `before_exit` before it starts the installer, and
+    /// ends the program itself after a start. Thus `before_exit` does only
+    /// steps that the program can undo: it stops the session and hides the
+    /// tray icon (a hidden icon leaves no ghost icon after the end). It does
+    /// not call `cleanup_before_exit`. When the installer does not start,
+    /// `restore_ui` shows the icon and the window again.
     fn update_source(app: &AppHandle) -> Result<updater::PluginSource, updater::Cause> {
         let exit = app.clone();
-        updater::PluginSource::new(
-            app,
-            None,
-            move || {
-                super::shutdown(&exit.state::<AppState>());
-                exit.cleanup_before_exit();
-            },
-            updater::plugin_install(),
-        )
+        updater::PluginSource::new(app, move || {
+            super::shutdown(&exit.state::<AppState>());
+            crate::tray::set_icon_visible(&exit, false);
+        })
     }
 
-    /// The automatic checks: one about 10 seconds after the start, then one
-    /// every 24 hours. Each check reads `updates.check` again. A developer
-    /// build never checks.
+    /// Puts the tray icon and the main window back after an installer that
+    /// did not start.
+    fn restore_ui(app: &AppHandle) -> updater::RestoreUi {
+        let app = app.clone();
+        Arc::new(move || {
+            crate::tray::set_icon_visible(&app, true);
+            crate::tray::show_main(&app);
+        })
+    }
+
+    /// The automatic checks. The first look comes about 10 seconds after
+    /// the start, then one each 30 minutes. A check runs when 24 hours of
+    /// the computer clock passed since the last check (also over a sleep of
+    /// the computer). Each look reads `updates.check` again, so a switch
+    /// from off to on applies at the next look. A developer build never
+    /// checks.
     pub fn start_update_timer(app: AppHandle) {
         if app.state::<AppState>().updates.developer_build() {
-            eprintln!("update: no automatic check: this is a developer build");
             return;
         }
         std::thread::spawn(move || {
@@ -1342,16 +1356,16 @@ pub mod ipc {
                 let state = app.state::<AppState>();
                 let enabled = super::updates_check_enabled(&state);
                 let emit = TauriEmit(app.clone());
-                match update_source(&app) {
-                    Ok(source) => tauri::async_runtime::block_on(updater::auto_check(
-                        &state.updates,
-                        &source,
-                        enabled,
-                        &emit,
-                    )),
-                    Err(cause) => eprintln!("update: no automatic check: {}", cause.text()),
-                }
-                std::thread::sleep(updater::CHECK_INTERVAL);
+                let source =
+                    || update_source(&app).map(|s| Box::new(s) as Box<dyn updater::UpdateSource>);
+                tauri::async_runtime::block_on(updater::auto_check(
+                    &state.updates,
+                    &source,
+                    enabled,
+                    &emit,
+                    updater::now_ms(),
+                ));
+                std::thread::sleep(updater::TICK);
             }
         });
     }
@@ -1386,6 +1400,7 @@ pub mod ipc {
             pending,
             emit,
             updater::READY_PAUSE,
+            restore_ui(&app),
         );
         Ok(())
     }
@@ -4825,6 +4840,63 @@ mod tests {
         // A new try works.
         begin_update_install(&s.state).unwrap();
         assert_eq!(refusal(&s.state.updates), updater::IN_PROGRESS);
+    }
+
+    /// An installer that does not start: the hook before the start stopped
+    /// the session (as the real hook does), the window comes back, the
+    /// offer shows the text, and a session can start again.
+    #[test]
+    fn test_an_installer_that_does_not_start_gives_the_program_back() {
+        use crate::updater::tests::counting_restore;
+        use crate::updater::{Cause, PendingUpdate};
+        struct FailingStart;
+        impl PendingUpdate for FailingStart {
+            fn download<'a>(
+                &'a self,
+                _progress: updater::Progress<'a>,
+            ) -> updater::BoxFuture<'a, Result<Vec<u8>, Cause>> {
+                Box::pin(async { Ok(vec![1, 2, 3]) })
+            }
+            fn install(&self, _bytes: Vec<u8>) -> Result<(), Cause> {
+                Err(Cause::InstallerStart)
+            }
+        }
+        let Setup {
+            _dir,
+            file,
+            state,
+            starter,
+            keys,
+            emit,
+        } = setup(&[]);
+        let state = state.with_updates(crate::updater::tests::with_offer(Arc::new(FailingStart)));
+        let s = Setup {
+            _dir,
+            file,
+            state,
+            starter,
+            keys,
+            emit,
+        };
+        let (id, pending) = begin_update_install(&s.state).unwrap();
+        let (restore, restored) = counting_restore();
+        crate::updater::tests::block_on(updater::run_download(
+            Arc::clone(&s.state.updates),
+            id,
+            pending,
+            Arc::new(crate::events::tests::FakeEmit::default()),
+            Duration::ZERO,
+            restore,
+        ));
+        assert_eq!(restored.load(Ordering::SeqCst), 1);
+        let status = s.state.updates.status();
+        assert_eq!(status.phase, "available");
+        assert_eq!(
+            status.error.as_deref(),
+            Some(updater::install_failed_text(Cause::InstallerStart).as_str())
+        );
+        s.start(true).unwrap();
+        stop_session(&s.state).unwrap();
     }
 
     #[test]

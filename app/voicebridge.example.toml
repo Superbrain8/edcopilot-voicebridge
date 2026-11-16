@@ -106,7 +106,8 @@ save_audio_dir = ""
 
 [updates]
 # The window program asks the GitHub page of the project for the newest
-# version at its start and every 24 hours. It sends no data about you. It asks
+# version at its start and one time each day. It sends no data about you.
+# GitHub sees your internet address, as each web site does. The program asks
 # you before it installs an update. false: it asks only when you click
 # "Check for updates".
 check = true

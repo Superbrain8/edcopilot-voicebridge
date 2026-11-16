@@ -63,18 +63,22 @@ impl PendingUpdate for FakePending {
     }
 }
 
-/// An update server with a list of answers.
-#[derive(Default)]
+/// One answer of the fake update server.
+pub type CheckAnswer = Result<Option<Found>, Cause>;
+
+/// An update server with a list of answers. A clone shares the answers
+/// and the count.
+#[derive(Default, Clone)]
 pub struct FakeSource {
-    pub answers: Mutex<VecDeque<Result<Option<Found>, Cause>>>,
-    pub calls: AtomicUsize,
+    pub answers: Arc<Mutex<VecDeque<CheckAnswer>>>,
+    pub calls: Arc<AtomicUsize>,
 }
 
 impl FakeSource {
-    pub fn with(answers: Vec<Result<Option<Found>, Cause>>) -> FakeSource {
+    pub fn with(answers: Vec<CheckAnswer>) -> FakeSource {
         FakeSource {
-            answers: Mutex::new(answers.into()),
-            calls: AtomicUsize::new(0),
+            answers: Arc::new(Mutex::new(answers.into())),
+            calls: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -113,6 +117,36 @@ pub fn with_offer(pending: Arc<dyn PendingUpdate>) -> Arc<Updates> {
     updates
 }
 
+/// One tick of the automatic check with `source` at the time `now`.
+pub fn auto(
+    updates: &Updates,
+    source: &FakeSource,
+    enabled: Result<bool, String>,
+    emit: &FakeEmit,
+    now: u64,
+) {
+    let source = source.clone();
+    let make = move || Ok(Box::new(source.clone()) as Box<dyn UpdateSource>);
+    block_on(auto_check(updates, &make, enabled, emit, now));
+}
+
+/// A time 24 hours after now: an automatic check is due.
+pub fn later() -> u64 {
+    now_ms() + CHECK_INTERVAL_MS
+}
+
+/// The restore action of the tests: it counts its calls.
+pub fn counting_restore() -> (RestoreUi, Arc<AtomicUsize>) {
+    let count = Arc::new(AtomicUsize::new(0));
+    let c = Arc::clone(&count);
+    (
+        Arc::new(move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        }),
+        count,
+    )
+}
+
 pub fn block_on<F: Future>(future: F) -> F::Output {
     tauri::async_runtime::block_on(future)
 }
@@ -149,6 +183,13 @@ fn test_texts_are_exact() {
     assert_eq!(
         install_failed_text(Cause::Signature),
         "The update did not install: the signature of the installer is not correct. \
+         The program is not changed. Do not install this version by hand. Tell the \
+         project on its Issues page."
+    );
+    assert_eq!(SIGNATURE_FAILED, install_failed_text(Cause::Signature));
+    assert_eq!(
+        install_failed_text(Cause::Download),
+        "The update did not install: the download of the installer failed. \
          The program is not changed."
     );
     assert_eq!(
@@ -237,7 +278,7 @@ fn test_a_failed_automatic_check_is_quiet() {
     let updates = release_build();
     let emit = FakeEmit::default();
     let source = FakeSource::with(vec![Err(Cause::Timeout)]);
-    block_on(auto_check(&updates, &source, Ok(true), &emit));
+    auto(&updates, &source, Ok(true), &emit, later());
     assert_eq!(source.calls(), 1);
     // No error goes back. Only the Diagnostics screen shows the cause.
     let status = updates.status();
@@ -250,12 +291,7 @@ fn test_a_failed_automatic_check_keeps_an_earlier_offer() {
     let pending = FakePending::new(Download::Fail(Cause::Download));
     let updates = with_offer(pending);
     let source = FakeSource::with(vec![Err(Cause::Timeout)]);
-    block_on(auto_check(
-        &updates,
-        &source,
-        Ok(true),
-        &FakeEmit::default(),
-    ));
+    auto(&updates, &source, Ok(true), &FakeEmit::default(), later());
     let status = updates.status();
     assert_eq!(status.phase, "available");
     assert_eq!(status.version.as_deref(), Some("0.3.0"));
@@ -270,19 +306,15 @@ fn test_a_failed_automatic_check_keeps_an_earlier_offer() {
 fn test_the_switch_off_stops_only_the_automatic_check() {
     let updates = release_build();
     let source = FakeSource::with(vec![Ok(None)]);
-    block_on(auto_check(
-        &updates,
-        &source,
-        Ok(false),
-        &FakeEmit::default(),
-    ));
+    auto(&updates, &source, Ok(false), &FakeEmit::default(), later());
     // A configuration that does not load: no automatic check either.
-    block_on(auto_check(
+    auto(
         &updates,
         &source,
         Err("bad file".into()),
         &FakeEmit::default(),
-    ));
+        later(),
+    );
     assert_eq!(source.calls(), 0);
     assert_eq!(updates.status().phase, "idle");
     // The button still works.
@@ -296,7 +328,7 @@ fn test_a_developer_build_never_checks() {
     let updates = Updates::new("0.2.0", true);
     let emit = FakeEmit::default();
     let source = FakeSource::with(vec![Ok(None)]);
-    block_on(auto_check(&updates, &source, Ok(true), &emit));
+    auto(&updates, &source, Ok(true), &emit, later());
     let error = block_on(run_check(&updates, &source, true, &emit)).unwrap_err();
     assert_eq!(error, DEVELOPER_BUILD);
     assert_eq!(source.calls(), 0);
@@ -307,22 +339,30 @@ fn test_a_developer_build_never_checks() {
 }
 
 #[test]
-fn test_later_hides_the_note_until_the_next_manual_check() {
+fn test_later_hides_only_that_version_until_the_next_manual_check() {
     let pending = FakePending::new(Download::Fail(Cause::Download));
     let updates = with_offer(pending.clone());
     updates.hide();
     assert!(updates.status().hidden);
-    // The next automatic check finds the update again: still hidden.
+    // The next automatic check finds the same version: still hidden.
     let source = FakeSource::with(vec![Ok(Some(found("0.3.0", pending.clone())))]);
-    block_on(auto_check(
+    auto(&updates, &source, Ok(true), &FakeEmit::default(), later());
+    assert!(updates.status().hidden);
+    // A newer version shows the note again.
+    let source = FakeSource::with(vec![Ok(Some(found("0.4.0", pending.clone())))]);
+    auto(
         &updates,
         &source,
         Ok(true),
         &FakeEmit::default(),
-    ));
-    assert!(updates.status().hidden);
+        later() + CHECK_INTERVAL_MS,
+    );
+    let status = updates.status();
+    assert_eq!(status.version.as_deref(), Some("0.4.0"));
+    assert!(!status.hidden);
+    updates.hide();
     // A manual check shows the note again.
-    let source = FakeSource::with(vec![Ok(Some(found("0.3.0", pending)))]);
+    let source = FakeSource::with(vec![Ok(Some(found("0.4.0", pending)))]);
     let status = block_on(run_check(&updates, &source, true, &FakeEmit::default())).unwrap();
     assert!(!status.hidden);
     assert_eq!(status.phase, "available");
@@ -344,6 +384,7 @@ fn test_a_correct_download_gets_ready_and_starts_the_installer() {
         offered,
         emit.clone(),
         Duration::ZERO,
+        counting_restore().0,
     ));
     assert_eq!(updates.phase(), Phase::Ready);
     assert_eq!(*lock(&pending.installs), vec![bytes]);
@@ -370,17 +411,12 @@ fn test_a_failed_download_offers_the_update_again_and_installs_nothing() {
         offered,
         emit.clone(),
         Duration::ZERO,
+        counting_restore().0,
     ));
     assert_eq!(pending.install_count(), 0);
     let status = updates.status();
     assert_eq!(status.phase, "available");
-    assert_eq!(
-        status.error.as_deref(),
-        Some(
-            "The update did not install: the signature of the installer is not correct. \
-             The program is not changed."
-        )
-    );
+    assert_eq!(status.error.as_deref(), Some(SIGNATURE_FAILED));
     assert!(!updates.blocks_session());
     // A new try clears the text.
     updates.begin_download().unwrap();
@@ -400,14 +436,19 @@ fn test_an_installer_that_does_not_start_offers_the_update_again() {
     });
     let updates = with_offer(pending.clone());
     let (id, offered) = updates.begin_download().unwrap();
+    let (restore, restored) = counting_restore();
     block_on(run_download(
         Arc::clone(&updates),
         id,
         offered,
         Arc::new(FakeEmit::default()),
         Duration::ZERO,
+        restore,
     ));
     assert_eq!(pending.install_count(), 1);
+    // The tray icon and the window come back.
+    assert_eq!(restored.load(Ordering::SeqCst), 1);
+    assert!(!updates.blocks_session());
     let status = updates.status();
     assert_eq!(status.phase, "available");
     assert_eq!(
@@ -427,7 +468,14 @@ fn test_cancel_stops_the_download_and_keeps_the_offer() {
     let (id, offered) = updates.begin_download().unwrap();
     // One download at a time.
     assert_eq!(refusal(&updates), IN_PROGRESS);
-    start_download(Arc::clone(&updates), id, offered, emit, Duration::ZERO);
+    start_download(
+        Arc::clone(&updates),
+        id,
+        offered,
+        emit,
+        Duration::ZERO,
+        counting_restore().0,
+    );
     wait_for("the download starts", || {
         pending.downloads.load(Ordering::SeqCst) == 1
     });
@@ -483,12 +531,7 @@ fn test_no_check_and_no_second_install_during_the_update() {
     let source = FakeSource::with(vec![Ok(None)]);
     let error = block_on(run_check(&updates, &source, true, &FakeEmit::default())).unwrap_err();
     assert_eq!(error, IN_PROGRESS);
-    block_on(auto_check(
-        &updates,
-        &source,
-        Ok(true),
-        &FakeEmit::default(),
-    ));
+    auto(&updates, &source, Ok(true), &FakeEmit::default(), later());
     assert_eq!(source.calls(), 0);
     assert_eq!(refusal(&updates), IN_PROGRESS);
 }
@@ -537,10 +580,168 @@ fn test_the_plugin_configuration_is_safe() {
         4,
         "no other key, for example no dangerous switch and no allowDowngrades: {keys:?}"
     );
-    assert_eq!(config["bundle"]["createUpdaterArtifacts"], true);
+    // The build never needs the key: the release workflow signs the finished
+    // installer in a separate job with `tauri signer sign`.
+    assert_eq!(config["bundle"]["createUpdaterArtifacts"], false);
     // The page gets no updater permission.
     for file in std::fs::read_dir(dir.join("capabilities")).unwrap() {
         let text = std::fs::read_to_string(file.unwrap().path()).unwrap();
         assert!(!text.contains("updater"), "{text}");
     }
+}
+
+/// A download that is complete is not stopped by a late abort handle: the
+/// task starts the installer.
+#[test]
+fn test_set_abort_after_the_download_does_not_abort() {
+    let pending = FakePending::new(Download::Forever);
+    let updates = with_offer(pending);
+    let (id, _) = updates.begin_download().unwrap();
+    assert!(updates.finish_download(id, Ok(())));
+    let ran = Arc::new(AtomicUsize::new(0));
+    let r = ran.clone();
+    updates.set_abort(
+        id,
+        Box::new(move || {
+            r.fetch_add(1, Ordering::SeqCst);
+        }),
+    );
+    assert_eq!(ran.load(Ordering::SeqCst), 0);
+    assert_eq!(updates.phase(), Phase::Ready);
+}
+
+/// The automatic check follows the clock of the computer: one check, then
+/// the next one 24 hours after the end of the last check.
+#[test]
+fn test_the_automatic_check_is_due_by_the_clock() {
+    let updates = release_build();
+    let source = FakeSource::with(vec![Ok(None), Ok(None), Ok(None)]);
+    let emit = FakeEmit::default();
+    auto(&updates, &source, Ok(true), &emit, 1_000);
+    assert_eq!(source.calls(), 1);
+    // The check sets the time of its end: now_ms of the test computer.
+    let end = updates.status().checked_at.unwrap();
+    auto(&updates, &source, Ok(true), &emit, end + 60_000);
+    auto(
+        &updates,
+        &source,
+        Ok(true),
+        &emit,
+        end + CHECK_INTERVAL_MS - 1,
+    );
+    assert_eq!(source.calls(), 1);
+    auto(&updates, &source, Ok(true), &emit, end + CHECK_INTERVAL_MS);
+    assert_eq!(source.calls(), 2);
+    let end = updates.status().checked_at.unwrap();
+    assert!(!updates.auto_check_due(end + 1));
+    assert!(updates.auto_check_due(end + CHECK_INTERVAL_MS));
+}
+
+/// A switch from off to on applies at the next tick.
+#[test]
+fn test_the_switch_on_applies_at_the_next_tick() {
+    let updates = release_build();
+    let source = FakeSource::with(vec![Ok(None)]);
+    let emit = FakeEmit::default();
+    auto(&updates, &source, Ok(false), &emit, 1_000);
+    assert_eq!(source.calls(), 0);
+    auto(
+        &updates,
+        &source,
+        Ok(true),
+        &emit,
+        1_000 + TICK.as_millis() as u64,
+    );
+    assert_eq!(source.calls(), 1);
+}
+
+/// A failure to make the update server is quiet and shows on Diagnostics.
+#[test]
+fn test_no_update_server_is_a_quiet_failure() {
+    let updates = release_build();
+    let make = || Err::<Box<dyn UpdateSource>, Cause>(Cause::Unknown);
+    block_on(auto_check(
+        &updates,
+        &make,
+        Ok(true),
+        &FakeEmit::default(),
+        0,
+    ));
+    let status = updates.status();
+    assert_eq!(status.phase, "check_failed");
+    assert_eq!(status.cause.as_deref(), Some("an unknown error occurred"));
+}
+
+/// An automatic check keeps the offer on the screen while it runs, and the
+/// install uses that offer.
+#[test]
+fn test_an_automatic_check_keeps_the_offer_on_the_screen() {
+    let pending = FakePending::new(Download::Forever);
+    let updates = with_offer(pending.clone());
+    assert!(updates.begin_check(false).unwrap());
+    assert_eq!(updates.status().phase, "available");
+    assert!(!updates.status().hidden);
+    // Install during the check: the offer of the earlier check.
+    updates.begin_download().unwrap();
+    // The end of the check does not change the install.
+    let other = FakePending::new(Download::Forever);
+    updates
+        .finish_check(Ok(Some(found("0.5.0", other))), 5)
+        .unwrap();
+    let status = updates.status();
+    assert_eq!(status.phase, "downloading");
+    assert_eq!(status.version.as_deref(), Some("0.3.0"));
+    assert_eq!(status.checked_at, Some(5));
+    // A manual check shows "checking".
+    let fresh = with_offer(pending);
+    assert!(fresh.begin_check(true).unwrap());
+    assert_eq!(fresh.status().phase, "checking");
+}
+
+/// The version rule: only a newer release version. A pre-release and build
+/// metadata do not count.
+#[test]
+fn test_only_a_newer_release_version_is_offered() {
+    let v = |text: &str| semver::Version::parse(text).unwrap();
+    let current = v("0.2.0");
+    assert!(is_offered(&current, &v("0.2.1")));
+    assert!(is_offered(&current, &v("0.3.0")));
+    assert!(is_offered(&current, &v("1.0.0")));
+    assert!(is_offered(&current, &v("0.3.0+build.7")));
+    assert!(!is_offered(&current, &v("0.2.0")));
+    assert!(!is_offered(&current, &v("0.1.9")));
+    assert!(!is_offered(&current, &v("0.2.0+build.7")));
+    assert!(!is_offered(&current, &v("0.3.0-beta.1")));
+    assert!(!is_offered(&current, &v("1.0.0-rc.1")));
+}
+
+/// The public key of tauri.conf.json is a minisign public key: base64 of a
+/// text with the minisign header line, and a key line of 42 bytes
+/// (algorithm "Ed", 8 bytes key id, 32 bytes Ed25519 key).
+#[test]
+fn test_the_project_public_key_decodes_to_a_minisign_key() {
+    use base64::Engine;
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let config: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("tauri.conf.json")).unwrap())
+            .unwrap();
+    let pubkey = config["plugins"]["updater"]["pubkey"].as_str().unwrap();
+    let engine = base64::engine::general_purpose::STANDARD;
+    let text = String::from_utf8(engine.decode(pubkey).unwrap()).unwrap();
+    let mut lines = text.lines();
+    let header = lines.next().unwrap();
+    assert!(
+        header.starts_with("untrusted comment: minisign public key: "),
+        "{header}"
+    );
+    let key = engine.decode(lines.next().unwrap().trim()).unwrap();
+    assert_eq!(key.len(), 42);
+    assert_eq!(&key[..2], b"Ed");
+    // The key id of the header is the id in the key, as hex, last byte first.
+    let id: String = key[2..10]
+        .iter()
+        .rev()
+        .map(|b| format!("{b:02X}"))
+        .collect();
+    assert!(header.ends_with(&id), "{header} {id}");
 }

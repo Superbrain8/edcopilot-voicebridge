@@ -147,7 +147,7 @@ const FIELDS = {
   },
   'matching.threshold': { kind: 'number', label: 'Threshold', screen: 'setup' },
   'matching.exact_single_word': { kind: 'flag', label: 'One-word phrases must be exact', screen: 'setup' },
-  'updates.check': { kind: 'flag', label: 'Check for updates at the start', screen: 'setup' },
+  'updates.check': { kind: 'flag', label: 'Check for updates at the start and one time each day', screen: 'setup' },
   'microphone.device': { kind: 'text', label: 'Input device', screen: 'microphone' },
   'microphone.mode': { kind: 'text', label: 'Mode', screen: 'microphone' },
   'push_to_talk.pre_roll_ms': { kind: 'integer', label: 'Pre-roll', screen: 'microphone', mode: 'push_to_talk' },

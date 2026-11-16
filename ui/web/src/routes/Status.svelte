@@ -2,6 +2,7 @@
   import Glyph from '../lib/components/Glyph.svelte'
   import ResultItem from '../lib/components/ResultItem.svelte'
   import StartupNotes from '../lib/components/StartupNotes.svelte'
+  import UpdateNote from '../lib/components/UpdateNote.svelte'
   import { configStore as config, savedWakeWordWarning, startBlock } from '../lib/config'
   import { sessionStore as session } from '../lib/session'
   import { clock } from '../lib/format'
@@ -29,6 +30,7 @@
 </script>
 
 <div class="status">
+  <UpdateNote />
   <StartupNotes />
   <section class="controls" aria-label="Session controls">
     <div class="buttons">

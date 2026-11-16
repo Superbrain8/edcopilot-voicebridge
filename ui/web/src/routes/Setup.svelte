@@ -31,6 +31,7 @@
   import { sessionStore as session } from '../lib/session'
   import { profileField } from '../lib/profile'
   import { sentence } from '../lib/format'
+  import { SWITCH_HELP } from '../lib/updates'
 
   const cores = logicalCores()
 
@@ -657,6 +658,24 @@
           </label>
           <p class="help" id="exact-help">A phrase of one word needs confidence 1.0.</p>
           {@render fieldError('matching.exact_single_word')}
+        </div>
+      </section>
+
+      <section class="group" aria-labelledby="g-updates">
+        <h2 id="g-updates">Updates</h2>
+        <div class="field">
+          <label class="option check">
+            <input
+              type="checkbox"
+              checked={draft.updates.check}
+              onchange={(e) => config.set('updates.check', e.currentTarget.checked)}
+              aria-invalid={problemsOf('updates.check').length > 0}
+              aria-describedby={describedBy('updates.check', 'updates-help')}
+            />
+            Check for updates at the start
+          </label>
+          <p class="help" id="updates-help">{SWITCH_HELP}</p>
+          {@render fieldError('updates.check')}
         </div>
       </section>
     </fieldset>

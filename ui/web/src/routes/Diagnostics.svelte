@@ -17,6 +17,7 @@
   import { startupStore } from '../lib/startup'
   import { MAX_FILTER_CHARS } from '../lib/commands'
   import { createLeftOutStore, followChecks, leftOutListShown, profileView } from '../lib/profile'
+  import { SWITCH_OFF, diagnosticsLine, updateStore as updates } from '../lib/updates'
 
   const diagnostics = createDiagnosticsStore(api, config)
 
@@ -25,6 +26,11 @@
   let lines = $derived(check ? checkOutput(check) : [])
   let dataDir = $derived($startupStore?.data_dir ?? null)
   let profile = $derived(profileView(check, $config.checkError))
+  let update = $derived($updates.status)
+  let checkOn = $derived(saved ? saved.updates.check : null)
+  let checkBusy = $derived(
+    $updates.checking || (update !== null && ['checking', 'downloading', 'ready'].includes(update.phase)),
+  )
 
   // The full list of the left-out commands loads when the section opens,
   // and again after each new check while it is open.
@@ -145,6 +151,25 @@
     <p class="help" data-uninstall-note>{UNINSTALL_NOTE}</p>
     {#if !saved && $diagnostics.error}
       <p class="error" role="alert" data-error>{$diagnostics.error}</p>
+    {/if}
+  </div>
+
+  <div class="panel" data-part="updates">
+    <h3>Updates</h3>
+    {#if update}
+      <p class="help" data-update-version>You have version {update.current_version}.</p>
+      <p data-update-line>{diagnosticsLine(update, checkOn)}</p>
+      {#if checkOn === false && update.phase !== 'idle' && !update.developer_build}
+        <p class="help" data-update-off>{SWITCH_OFF}</p>
+      {/if}
+    {/if}
+    <p>
+      <button type="button" class="btn" data-action="check-updates" disabled={checkBusy} onclick={() => updates.check()}
+        >Check for updates</button
+      >
+    </p>
+    {#if $updates.checkError}
+      <p class="error" role="alert" data-update-error>{$updates.checkError}</p>
     {/if}
   </div>
 

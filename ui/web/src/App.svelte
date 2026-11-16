@@ -17,6 +17,7 @@
   import Status from './routes/Status.svelte'
   import Words from './routes/Words.svelte'
   import { isDirty, tablesStore as tables } from './lib/tables'
+  import { updateStore as updates } from './lib/updates'
 
   const PHASE_SHAPE: Record<Phase, Shape> = {
     loading: 'half',
@@ -51,6 +52,8 @@
     })
     // The download can run while the user is on another screen.
     void model.init()
+    // The update state: the Rust side checks by itself after the start.
+    void updates.init()
     appInfo()
       .then((result) => (info = result))
       .catch(() => (info = null))
@@ -75,6 +78,7 @@
       removeTray?.()
       session.destroy()
       model.destroy()
+      updates.destroy()
     }
   })
 </script>

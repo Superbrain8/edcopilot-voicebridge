@@ -5,6 +5,14 @@
 # - workflow_dispatch: a dry run. The installer and SHA256SUMS.txt go to a
 #   workflow artifact only. No release is made.
 #
+# The updater: the build signs the installer with the private key of the
+# secret TAURI_SIGNING_PRIVATE_KEY (no password). The release job writes
+# latest.json and checks the signature with the public key of
+# ui/tauri.conf.json. The program reads
+# releases/latest/download/latest.json: a draft does not reach the users,
+# only a published release does. A tag build without the secret stops. A
+# dry run without the secret builds without the updater files.
+#
 # The build calls the Tauri CLI from ui/web/package-lock.json (npm ci). It
 # does not use tauri-apps/tauri-action: the local command is the same, and
 # the CLI version comes from the lockfile.
@@ -127,29 +135,46 @@ jobs:
       - name: Check Cargo.lock
         run: cargo fetch --locked
 
+      # With "bundle.createUpdaterArtifacts": true, tauri build fails
+      # without the private key. A tag build must sign. A dry run without
+      # the secret (for example in a fork) builds without the updater files.
+      - name: Check the updater signing key
+        id: signing
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          if ($env:HAS_KEY -eq 'true') {
+            Write-Host "The installer gets an updater signature."
+            "sign=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } elseif ($env:REF_TYPE -eq 'tag') {
+            Write-Host "::error::The secret TAURI_SIGNING_PRIVATE_KEY is empty. A release needs the updater signature. Add the secret, then make the tag again."
+            throw "No updater signing key."
+          } else {
+            Write-Host "::warning::Dry run without TAURI_SIGNING_PRIVATE_KEY: the build makes no updater signature."
+            "sign=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
       - name: Build the NSIS installer
         working-directory: ui
-        # ---------------------------------------------------------------
-        # TAURI UPDATER (later, not active now)
-        # When the program gets the Tauri updater plugin:
-        #   1. Set "bundle.createUpdaterArtifacts": true in ui/tauri.conf.json
-        #      and the public key in "plugins.updater.pubkey".
-        #   2. Add the two repository secrets and remove the comment marks:
-        # env:
-        #   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        #   3. tauri build then also writes "<installer>.sig" next to the
-        #      installer. The "Package" step must copy it, and a new step
-        #      must write latest.json (see the release job).
-        # ---------------------------------------------------------------
+        env:
+          # The key has no password. tauri build writes "<installer>.sig".
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          SIGN: ${{ steps.signing.outputs.sign }}
         run: |
-          & ./web/node_modules/.bin/tauri.cmd build
+          if ($env:SIGN -eq 'true') {
+            & ./web/node_modules/.bin/tauri.cmd build
+          } else {
+            & ./web/node_modules/.bin/tauri.cmd build --config no-updater-artifacts.conf.json
+          }
           if ($LASTEXITCODE -ne 0) { throw "tauri build failed." }
 
       - name: Package the installer and its SHA-256
         id: package
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          SIGN: ${{ steps.signing.outputs.sign }}
         run: |
           $found = @(Get-ChildItem -Path target/release/bundle/nsis -Filter '*-setup.exe')
           if ($found.Count -ne 1) { throw "Expected one installer in target/release/bundle/nsis, found $($found.Count)." }
@@ -160,7 +185,15 @@ jobs:
           Copy-Item -Path $found[0].FullName -Destination (Join-Path $out $name)
           $hash = (Get-FileHash -Algorithm SHA256 -Path (Join-Path $out $name)).Hash.ToLowerInvariant()
           [System.IO.File]::WriteAllText((Join-Path $out 'SHA256SUMS.txt'), "$hash  $name`n")
-          # TAURI UPDATER (later): copy "$($found[0].FullName).sig" to $out here.
+          # The signature covers the bytes of the file, not its name. Thus it
+          # stays correct for the new name.
+          $sig = "$($found[0].FullName).sig"
+          if ($env:SIGN -eq 'true') {
+            if (-not (Test-Path $sig)) { throw "tauri build made no updater signature $sig." }
+            Copy-Item -Path $sig -Destination (Join-Path $out "$name.sig")
+          } elseif (Test-Path $sig) {
+            throw "An updater signature exists, but the build had no key: $sig."
+          }
           Write-Host "$hash  $name"
           "installer=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "sha256=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -185,12 +218,15 @@ jobs:
       run:
         shell: bash
     steps:
-      # Only CHANGELOG.md is necessary here. It has the hand-written notes.
-      - name: Check out the change log
+      # Only two files are necessary here: CHANGELOG.md has the hand-written
+      # notes, ui/tauri.conf.json has the public key of the updater.
+      - name: Check out the change log and the updater key
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          sparse-checkout: CHANGELOG.md
+          sparse-checkout: |
+            CHANGELOG.md
+            ui/tauri.conf.json
           sparse-checkout-cone-mode: false
 
       - name: Download the installer artifact
@@ -203,10 +239,98 @@ jobs:
         working-directory: release
         run: sha256sum --check SHA256SUMS.txt
 
-      # TAURI UPDATER (later, not active now): add a step here that writes
-      # release/latest.json from the version, the .sig file and the asset
-      # URL https://github.com/${{ github.repository }}/releases/download/<tag>/<installer>.
-      # Then add latest.json and the .sig file to "gh release create" below.
+      # The changes come from the section "## <version>" of CHANGELOG.md. A
+      # person writes that section before the tag is made. The release
+      # notes and latest.json both use changes.md.
+      - name: Get the changes of this version
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          awk -v v="${VERSION}" '
+            /^## / { on = ($2 == v); next }
+            on { print }
+          ' CHANGELOG.md | sed -e '/./,$!d' > changes.md
+          if [ -z "$(tr -d '[:space:]' < changes.md)" ]; then
+            echo "::error::CHANGELOG.md has no section \"## ${VERSION}\" with text. Write the changes of this version, then make the tag again."
+            exit 1
+          fi
+          cat changes.md
+
+      # The static update file of the Tauri updater. jq makes the JSON, so
+      # quotes and line breaks in the notes stay correct.
+      - name: Write latest.json
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          INSTALLER: ${{ needs.build.outputs.installer }}
+          TAG: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          sig="release/${INSTALLER}.sig"
+          if [ ! -s "$sig" ]; then
+            echo "::error::The artifact has no updater signature ${INSTALLER}.sig."
+            exit 1
+          fi
+          jq -n \
+            --arg version "${VERSION}" \
+            --rawfile notes changes.md \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --rawfile signature "$sig" \
+            --arg url "https://github.com/${REPOSITORY}/releases/download/${TAG}/${INSTALLER}" \
+            '{
+              version: $version,
+              notes: ($notes | sub("\\s+$"; "")),
+              pub_date: $pub_date,
+              platforms: {
+                "windows-x86_64": {
+                  signature: ($signature | gsub("\\s"; "")),
+                  url: $url
+                }
+              }
+            }' > release/latest.json
+          cat release/latest.json
+
+      # The checks before the release: the file is JSON, its version is the
+      # tag, the address is the asset, and the signature is correct for
+      # the public key of ui/tauri.conf.json. Tauri keys and signatures are
+      # minisign files in base64.
+      - name: Check latest.json and the signature
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          INSTALLER: ${{ needs.build.outputs.installer }}
+          TAG: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          file=release/latest.json
+          jq -e . "$file" > /dev/null
+          version="$(jq -r .version "$file")"
+          if [ "$version" != "${VERSION}" ] || [ "v${version}" != "${TAG}" ]; then
+            echo "::error::latest.json has the version ${version}, the tag is ${TAG}."
+            exit 1
+          fi
+          signature="$(jq -r '.platforms["windows-x86_64"].signature // ""' "$file")"
+          if [ -z "$signature" ]; then
+            echo "::error::latest.json has no signature."
+            exit 1
+          fi
+          url="$(jq -r '.platforms["windows-x86_64"].url' "$file")"
+          if [ "$url" != "https://github.com/${REPOSITORY}/releases/download/${TAG}/${INSTALLER}" ]; then
+            echo "::error::latest.json has the wrong address: ${url}"
+            exit 1
+          fi
+          jq -e '.pub_date | fromdateiso8601' "$file" > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq minisign > /dev/null
+          keys="$(mktemp -d)"
+          jq -j '.plugins.updater.pubkey' ui/tauri.conf.json | base64 -d > "$keys/voicebridge.pub"
+          printf '%s' "$signature" | base64 -d > "$keys/installer.minisig"
+          minisign -V -p "$keys/voicebridge.pub" -m "release/${INSTALLER}" -x "$keys/installer.minisig" | tee "$keys/result.txt"
+          # tauri build puts the version into the signed comment. The
+          # program refuses a signature for another version.
+          if ! grep -q "version:${VERSION}\$" "$keys/result.txt"; then
+            echo "::error::The signature is not for version ${VERSION}."
+            exit 1
+          fi
 
       - name: Write the release notes
         env:
@@ -216,16 +340,7 @@ jobs:
           SERVER_URL: ${{ github.server_url }}
         run: |
           hash="$(cut -d ' ' -f 1 release/SHA256SUMS.txt)"
-          # The changes come from the section "## <version>" of CHANGELOG.md.
-          # A person writes that section before the tag is made.
-          changes="$(awk -v v="${VERSION}" '
-            /^## / { on = ($2 == v); next }
-            on { print }
-          ' CHANGELOG.md | sed -e '/./,$!d')"
-          if [ -z "$(printf '%s' "$changes" | tr -d '[:space:]')" ]; then
-            echo "::error::CHANGELOG.md has no section \"## ${VERSION}\" with text. Write the changes of this version, then make the tag again."
-            exit 1
-          fi
+          changes="$(cat changes.md)"
           cat > notes.md <<EOF
           ## EDCoPilot VoiceBridge ${VERSION}
 
@@ -261,6 +376,10 @@ jobs:
 
           \`SHA256SUMS.txt\` has the same value.
 
+          ### Updates
+
+          Version 0.2.0 and later look for a newer version and ask before they install it. The files \`latest.json\` and \`${INSTALLER}.sig\` are for this update check.
+
           ### More information
 
           Read the README: ${SERVER_URL}/${REPOSITORY}#readme
@@ -276,7 +395,9 @@ jobs:
         run: |
           gh release create "$TAG" \
             "release/${INSTALLER}" \
+            "release/${INSTALLER}.sig" \
             release/SHA256SUMS.txt \
+            release/latest.json \
             --draft \
             --verify-tag \
             --title "EDCoPilot VoiceBridge ${TAG}" \

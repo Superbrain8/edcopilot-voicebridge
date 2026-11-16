@@ -160,8 +160,9 @@ times. We did not test this case.
   Microsoft, if your Windows does not have it.
 - The window program checks for updates on github.com. It asks the releases
   page of the project for the newest version: about 10 seconds after the
-  start, and then every 24 hours. It sends no data about you. To stop this
-  check, clear "Check for updates at the start" on the Setup screen
+  start, and then one time each day. It sends no data about you. GitHub sees
+  your internet address, as each web site does. To stop this check, clear
+  "Check for updates at the start and one time each day" on the Setup screen
   (`updates.check = false`). The button "Check for updates" on the
   Diagnostics screen still works.
 - The program asks you before it installs an update. It never installs an

@@ -115,23 +115,51 @@ permission. The page calls the commands of `commands::ipc`.
   only protection against a changed installer.
 - The capture lock is the gate between a session start and an install. See
   the comment at the top of `ui/src/state.rs`.
+- Just before the installer starts, the program stops the session and hides
+  the tray icon. It does not call `cleanup_before_exit`. If the installer
+  does not start, the program shows the icon and the window again.
+- The window program has no log file. The Diagnostics screen shows the
+  result of the last check.
 - The tests use a throwaway key pair. `ui/fixtures/updater` has its public key
   and the files that it signed. The tests never use the key of the project.
 
 ### The signing key
 
-The private key of the project signs each installer. The release workflow
-reads it from the repository secret `TAURI_SIGNING_PRIVATE_KEY`. The key has
-no password. The owner keeps a copy in `private/updater/voicebridge.key`.
-Git ignores the folder `private/`. Never commit the key, never print it in a
-log, and never send it in a message.
+The private key of the project signs each installer. The key has no
+password. The owner keeps a copy in `private/updater/voicebridge.key`. Git
+ignores the folder `private/`. Never commit the key, never print it in a log,
+and never send it in a message.
 
 Make a backup of the key in a safe place outside the computer, for example a
-password manager. If the key is lost, the installed programs cannot accept
-a new update: each update of a new key fails the signature check. Each user
-must then install the next version by hand from the Releases page.
+password manager.
 
-To replace the key (for example after a leak), do these steps:
+#### The environment `release`
+
+The release workflow signs in the job "sign" only. That job runs only for a
+tag, in the GitHub environment `release`. Set it up one time:
+
+1. On GitHub, open the repository settings. Open "Environments".
+2. Make the environment `release`.
+3. Under "Deployment branches and tags", select "Selected branches and tags".
+   Add the rule for the tags `v*`. Then a run of another branch or tag cannot
+   use the secrets.
+4. Add the environment secret `TAURI_SIGNING_PRIVATE_KEY`. Its value is the
+   content of `private/updater/voicebridge.key`.
+5. Optional: add the environment secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+   The key of the project has no password: an absent secret gives an empty
+   password.
+6. Remove a repository secret `TAURI_SIGNING_PRIVATE_KEY`, if one exists.
+   Only the environment must hold the key.
+7. Open "Rules", then "Rulesets". Make a tag ruleset for `v*`. Let only the
+   owner make, move, or delete these tags.
+
+Without the environment, GitHub makes it at the first tag run, without
+rules and without secrets. The job "sign" then stops with an error.
+
+#### A new key (rotation)
+
+The installed programs know only the public key of their version. Thus the
+change to a new key needs a bridge release:
 
 1. In the folder `ui/web`, make a new key pair:
 
@@ -142,15 +170,39 @@ To replace the key (for example after a leak), do these steps:
 2. Put the new public key (the content of the `.pub` file) into
    `plugins.updater.pubkey` of `ui/tauri.conf.json` and into the test
    `test_the_plugin_configuration_is_safe`.
-3. Sign the release that has the new public key with the OLD key. The
-   installed programs know only the old key. Thus they can install this
+3. Release this version (the bridge release) signed with the OLD key. The
+   installed programs know only the old key. Thus they can install the
+   bridge release, and then they know the new key.
+4. Keep the bridge release as the newest release for 60 days. `latest.json`
+   names only the newest release. A program that is still on a version before
+   the bridge release can update only while the bridge release is the newest
    release.
-4. After that release, replace the secret `TAURI_SIGNING_PRIVATE_KEY` with the
-   new private key. The next releases use the new key.
+5. After the 60 days, replace the secret `TAURI_SIGNING_PRIVATE_KEY` of the
+   environment `release` with the new key. The next releases use the new key.
 
-After a leak, also tell the users. A person with the old key can make an
-installer that the old versions accept. That person must also change the
-files of the GitHub release, or the update address, to reach the users.
+A program that is still on a version before the bridge release when the
+first release of the new key becomes the newest release can never verify an
+update. Its user must install the next version by hand from the Releases
+page.
+
+#### A leaked key
+
+Nobody can revoke a leaked key from a distance. The installed programs trust
+it for ever. A person with the key can make an installer that these programs
+accept. That person must also change the files of the GitHub release, or the
+update address, to reach the users. Do these steps at once:
+
+1. Make a bridge release with a new key, as in "A new key (rotation)". Sign
+   it with the old key: it is the only key that the installed programs know.
+2. Put a notice on the GitHub page of the project. Tell the users to update
+   to the bridge release, or to install it by hand.
+
+#### A lost key
+
+Without the key, no update of the installed programs is possible. Make a new
+key pair and put its public key into the next version. Each user must install
+that version by hand from the Releases page. From then on, the new key signs
+the releases.
 
 ## Live tests
 

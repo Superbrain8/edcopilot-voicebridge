@@ -228,11 +228,10 @@ Thus they cannot run at the same time.
    $env:CARGO_TARGET_DIR = "$PWD\target\installer"
    ```
 
-4. In the folder `ui/web`, build the installer without the updater
-   signature:
+4. In the folder `ui/web`, build the installer:
 
    ```powershell
-   npm run tauri build -- --config no-updater-artifacts.conf.json
+   npm run tauri build
    ```
 
 The build makes the web part, the release program, and the NSIS installer.
@@ -240,27 +239,41 @@ The installer is in `<target folder>\release\bundle\nsis\`. Its name is
 `EDCoPilot VoiceBridge_<version>_x64-setup.exe`. The target folder is
 `target` when `CARGO_TARGET_DIR` is not set.
 
-`ui/tauri.conf.json` sets `bundle.createUpdaterArtifacts` to `true`. With
-this setting, `npm run tauri build` signs the installer for the updater and
-needs the private signing key. Without the key, the build makes the
-installer but then stops with the error "A public key has been found, but
-no private key". The file `ui/no-updater-artifacts.conf.json` switches the
-signature off for one build. `cargo build`, `cargo test`, and
-`npm run tauri dev` do not need the key.
+The build needs no signing key. `ui/tauri.conf.json` sets
+`bundle.createUpdaterArtifacts` to `false`: the build makes no updater
+signature. With `true`, `tauri build` stops without the key (error "A public
+key has been found, but no private key"), and the key would be in the
+environment of each build script.
 
-To build a signed installer (only the owner of the key), set the path of the
-key file before step 4, and use `npm run tauri build` without `--config`.
-Run these two lines in the repository folder:
+### Sign an installer for the updater
 
-```powershell
-$env:TAURI_SIGNING_PRIVATE_KEY = "$PWD\private\updater\voicebridge.key"
-$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
-```
+Only the owner of the key does this, and only for a test. The release
+workflow signs the installers of the releases. Do these steps in the
+repository folder, after the build:
 
-`TAURI_SIGNING_PRIVATE_KEY` takes the path of the key file or the key itself.
-The build then also writes `EDCoPilot VoiceBridge_<version>_x64-setup.exe.sig`.
-An old `.sig` file of an earlier build can stay in the folder. Delete the old
-files before a build.
+1. Set the path of the key file and the empty password:
+
+   ```powershell
+   $env:TAURI_SIGNING_PRIVATE_KEY_PATH = "$PWD\private\updater\voicebridge.key"
+   $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+   ```
+
+2. Sign the installer. Use the version of the program:
+
+   ```powershell
+   node ui\web\node_modules\@tauri-apps\cli\tauri.js signer sign --app-version 0.2.0 "target\release\bundle\nsis\EDCoPilot VoiceBridge_0.2.0_x64-setup.exe"
+   ```
+
+3. Remove the two variables:
+
+   ```powershell
+   Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PATH, Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+   ```
+
+The command writes `<installer>.sig` next to the installer. `--app-version`
+puts the version into the signed comment. The program refuses a signature
+without the version or with another version. `tauri signer sign` reads
+`TAURI_SIGNING_PRIVATE_KEY` as the key itself, never as a path.
 
 At the first build, the Tauri bundler downloads NSIS and
 `nsis_tauri_utils.dll` into `%LOCALAPPDATA%\tauri`. The next builds use this
@@ -302,7 +315,8 @@ Do not set the environment variable `RUSTFLAGS`. It replaces the flags of
 | `SHERPA_ONNX_ARCHIVE_DIR` | A folder with the archive. The build script copies the archive from there and does not download it. |
 | `CARGO_TARGET_DIR` | A separate target folder, for example for the installer build. |
 | `VOICEBRIDGE_DEV_DATA_DIR` | The data folder of a development build of the window program. It must be an absolute path. |
-| `TAURI_SIGNING_PRIVATE_KEY` | The path of the updater signing key, or the key itself. Only for a signed installer. See "Build the installer". |
+| `TAURI_SIGNING_PRIVATE_KEY_PATH` | The path of the updater signing key, for `tauri signer sign`. See "Sign an installer for the updater". |
+| `TAURI_SIGNING_PRIVATE_KEY` | The updater signing key itself. Only the release workflow sets it, in its signing step. |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The password of the signing key. The key of the project has none: set an empty value. |
 | `RUSTFLAGS` | Do not set it. See "The static C runtime". |
 
@@ -356,25 +370,34 @@ finds the new version at its next check.
 
 The release workflow does these steps for the update:
 
-1. The build signs the installer with the secret `TAURI_SIGNING_PRIVATE_KEY`.
-   A tag build without this secret stops with an error. A dry run
-   (workflow_dispatch) without the secret builds without the signature.
-2. The release job writes `latest.json` with `jq`: the version without "v",
+1. The job "build" builds the installer. It has no secret. Thus npm, the
+   build scripts of the crates, the bundler, and NSIS never see the key.
+2. Only for a tag, the job "sign" signs the finished installer with
+   `tauri signer sign --app-version <version>`. The job runs in the GitHub
+   environment `release` and reads the secrets `TAURI_SIGNING_PRIVATE_KEY`
+   and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (optional) from it. Only one
+   step has the key in its environment. In that step, two processes see the
+   key: the PowerShell of the step and `node.exe`, which runs the Tauri CLI
+   in its own process. The job installs the CLI with `npm ci
+   --ignore-scripts` before that step. A tag without the secret stops with an
+   error. A dry run (workflow_dispatch) never signs.
+3. The release job writes `latest.json` with `jq`: the version without "v",
    the text of the CHANGELOG section, the time, the content of the `.sig`
    file, and the address of the installer asset of the tag.
-3. The job checks `latest.json`: the file is JSON, its version is the version
+4. The job checks `latest.json`: the file is JSON, its version is the version
    of the tag, the address is the installer asset, and the signature is not
    empty.
-4. The job checks the signature with `minisign` and the public key of
+5. The job checks the signature with `minisign` and the public key of
    `ui/tauri.conf.json`. The signed comment must have the version of the tag.
-5. The draft gets the installer, `<installer>.sig`, `SHA256SUMS.txt`, and
+6. The draft gets the installer, `<installer>.sig`, `SHA256SUMS.txt`, and
    `latest.json`. `SHA256SUMS.txt` has only the installer.
 
 Do not rename or replace the installer asset after the workflow. The address
 in `latest.json` names the asset, and the signature covers its bytes.
 
 The secret `TAURI_SIGNING_PRIVATE_KEY` holds the content of the private key
-file. See "The signing key" in [DEVELOPMENT.md](DEVELOPMENT.md).
+file. See "The signing key" in [DEVELOPMENT.md](DEVELOPMENT.md) for the
+environment `release`.
 
 To test the release build without a release, start the workflow "Release" by
 hand (workflow_dispatch). The installer is then a workflow artifact only.

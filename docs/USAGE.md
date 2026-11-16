@@ -394,11 +394,12 @@ variable. The console program reads only the variable.
 
 | Field | Meaning |
 | --- | --- |
-| "Check for updates at the start" | On: the program checks for a newer version about 10 seconds after the start and then every 24 hours. Off: the program checks only when you click "Check for updates" on the Diagnostics screen. The key is `updates.check`. |
+| "Check for updates at the start and one time each day" | On: the program checks for a newer version about 10 seconds after the start and then one time each day. Off: the program checks only when you click "Check for updates" on the Diagnostics screen. The key is `updates.check`. |
 
 The help line of the field is "The program asks the GitHub page of the
-project for the newest version. It sends no data about you." Save writes the
-switch. A running session does not need a restart for it. See "Updates".
+project for the newest version. It sends no data about you. GitHub sees your
+internet address, as each web site does." Save writes the switch. A running
+session does not need a restart for it. See "Updates".
 
 ### Save the settings
 
@@ -870,21 +871,29 @@ true for a dry run.
 
 The window program can update itself. The program asks the GitHub releases
 page of the project for the file `latest.json`. That file names the newest
-published version. The program sends no data about you. A draft or a
-pre-release on GitHub does not count.
+published version. The program sends no data about you. GitHub sees your
+internet address, as each web site does. A draft on GitHub does not count.
 
 The program checks at these times:
 
 - About 10 seconds after the start, when `updates.check` is true. The check
   does not stop the start.
-- Every 24 hours while the program runs, when `updates.check` is true.
+- One time each day while the program runs, when `updates.check` is true.
 - When you click "Check for updates" on the Diagnostics screen. This also
   works when `updates.check` is false.
+
+The daily check uses the clock of the computer. The program looks at the
+clock each 30 minutes. When 24 hours passed since the last check, it checks
+again. While the computer sleeps, the program does not run. After the
+computer wakes up, the check comes at the next look. A change of
+`updates.check` applies at the next look too.
 
 A development build never checks.
 
 Only a newer version counts. An equal or older version is "the latest
-version". The program never installs an update without your click.
+version". The program does not offer a test version (a version with a part
+such as `-beta.1`). The program never installs an update without your
+click.
 
 A check that the program starts by itself and that fails shows nothing on
 the Status screen. The Diagnostics screen shows "The last check failed:
@@ -913,19 +922,21 @@ program could not check for updates: <cause>. Try again later."
 During the download and the install, you cannot start a session. A start
 then gives "The update is in progress."
 
-"Later" hides the note until the next start of the program or the next
-click on "Check for updates".
+"Later" hides the note of this version until the next start of the program
+or the next click on "Check for updates". When the program finds a newer
+version later, the note shows again.
 
 Your configuration, your word tables, the model, and the API key stay as they
 are. The installer replaces only the program folder.
 
 ### When the update fails
 
-If the download or the signature check fails, the note shows "The update did
-not install: <cause>. The program is not changed." The program never starts
-an installer with a wrong signature. Click "Install update" again later.
+The program never starts an installer with a wrong signature. What you do
+depends on the text of the note.
 
-If the update fails again, install the new version by hand:
+If the connection or the download fails, the note shows "The update did not
+install: <cause>. The program is not changed." Click "Install update" again
+later. If the update fails again, install the new version by hand:
 
 1. Open the Releases page of the project on GitHub.
 2. Download `EDCoPilot-VoiceBridge_<version>_x64-setup.exe` of the newest
@@ -933,6 +944,23 @@ If the update fails again, install the new version by hand:
 3. Stop the session and quit the program (right-click the icon in the
    notification area, then select Quit).
 4. Start the installer.
+
+If the signature is not correct, the note shows "The update did not install:
+the signature of the installer is not correct. The program is not changed.
+Do not install this version by hand. Tell the project on its Issues page."
+The file on the server can have a change or damage. Do not download and start
+the installer of this version by hand. Open an issue on the Issues page of the
+project on GitHub, and write the version and the text of the note.
+
+If the installer does not start, the program shows its window and its icon
+again, and the note shows "The update did not install: the installer did not
+start. The program is not changed." You can start a session again.
+
+### Go back to version 0.1.0
+
+Before you install version 0.1.0 again, delete the table `[updates]` (the
+line `[updates]` and the line `check = ...`) from the configuration file.
+Version 0.1.0 does not know this table and does not load the file.
 
 ## Update the window program
 
@@ -1392,10 +1420,11 @@ tuning".
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `check` | `true` | The window program checks for a newer version at its start and every 24 hours. `false` switches the automatic check off. "Check for updates" on the Diagnostics screen still works. |
+| `check` | `true` | The window program checks for a newer version at its start and one time each day. `false` switches the automatic check off. "Check for updates" on the Diagnostics screen still works. |
 
 The console program does not check for updates. The address of the update
-server is not a setting. The table has no other key.
+server is not a setting. The table has no other key. Version 0.1.0 does not
+load a file with this table: see "Go back to version 0.1.0".
 
 ## The commands
 

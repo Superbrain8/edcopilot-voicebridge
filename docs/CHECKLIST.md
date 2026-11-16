@@ -273,10 +273,10 @@ Do N1 and N2 before you publish.
 
 | # | Action | Expected result | Result |
 | --- | --- | --- | --- |
-| N1 | Open the draft release on GitHub. | The draft has the installer, `<installer>.sig`, `SHA256SUMS.txt`, and `latest.json`. `latest.json` has the new version without "v", the text of the CHANGELOG section as `notes`, and the address of the installer of this release. | |
-| N2 | On the Setup screen of the installed older version, clear "Check for updates at the start" and click "Save". Quit the program and start it again. Wait 30 seconds. | No note shows on the Status screen. The Diagnostics screen shows "The program does not check for updates (updates.check is false)." | |
+| N1 | Open the draft release on GitHub. Open the run of the workflow. | The run has the job "Sign the installer for the updater" in the environment `release`. The draft has the installer, `<installer>.sig`, `SHA256SUMS.txt`, and `latest.json`. `latest.json` has the new version without "v", the text of the CHANGELOG section as `notes`, and the address of the installer of this release. | |
+| N2 | On the Setup screen of the installed older version, clear "Check for updates at the start and one time each day" and click "Save". Quit the program and start it again. Wait 30 seconds. | No note shows on the Status screen. The Diagnostics screen shows "The program does not check for updates (updates.check is false)." | |
 | N3 | Publish the release. On the Diagnostics screen, click "Check for updates". | The line shows "Version <new> is available." The Status screen shows "Version <new> is available. You have version <old>." | |
-| N4 | Select "Check for updates at the start" again and click "Save". Quit the program and start it again. Wait 30 seconds. | The note shows on the Status screen without a click. | |
+| N4 | Select "Check for updates at the start and one time each day" again and click "Save". Quit the program and start it again. Wait 30 seconds. | The note shows on the Status screen without a click. | |
 | N5 | Click "Later". Open another screen and come back. | The note is gone. It does not come back before the next start or the next click on "Check for updates". | |
 | N6 | Click "Check for updates" on the Diagnostics screen. Open the Status screen. Open "What is new". | The note shows again. "What is new" shows the changes of the new version and the address of its release page. | |
 | N7 | Click "Start as dry run". | "Install update" is off. The note shows "Stop the session first." | |

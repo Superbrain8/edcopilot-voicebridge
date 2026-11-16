@@ -251,11 +251,10 @@ Only the owner of the key does this, and only for a test. The release
 workflow signs the installers of the releases. Do these steps in the
 repository folder, after the build:
 
-1. Set the path of the key file and the empty password:
+1. Set the path of the key file:
 
    ```powershell
    $env:TAURI_SIGNING_PRIVATE_KEY_PATH = "$PWD\private\updater\voicebridge.key"
-   $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
    ```
 
 2. Sign the installer. Use the version of the program:
@@ -264,13 +263,15 @@ repository folder, after the build:
    node ui\web\node_modules\@tauri-apps\cli\tauri.js signer sign --app-version 0.2.0 "target\release\bundle\nsis\EDCoPilot VoiceBridge_0.2.0_x64-setup.exe"
    ```
 
-3. Remove the two variables:
+3. Remove the variable:
 
    ```powershell
-   Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PATH, Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+   Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PATH
    ```
 
-The command writes `<installer>.sig` next to the installer. `--app-version`
+The key of the project has no password. Without
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, the command uses an empty password. The
+command writes `<installer>.sig` next to the installer. `--app-version`
 puts the version into the signed comment. The program refuses a signature
 without the version or with another version. `tauri signer sign` reads
 `TAURI_SIGNING_PRIVATE_KEY` as the key itself, never as a path.

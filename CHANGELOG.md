@@ -13,8 +13,8 @@ Write the section before you make the tag. Keep each line short.
 - The installer of each update has a signature. The program installs only
   an update with a correct signature.
 - The new setting `updates.check` (Setup screen: "Check for updates at the
-  start and one time each day") switches the automatic check off. The button "Check for updates"
-  on the Diagnostics screen still works.
+  start and one time each day") switches the automatic check off. The
+  button "Check for updates" on the Diagnostics screen still works.
 
 ## 0.1.0
 

@@ -954,7 +954,9 @@ project on GitHub, and write the version and the text of the note.
 
 If the installer does not start, the program shows its window and its icon
 again, and the note shows "The update did not install: the installer did not
-start. The program is not changed." You can start a session again.
+start. The program is not changed." You can start a session again. A model
+download or a capture of the talk button that was in progress stopped. Start
+it again.
 
 ### Go back to version 0.1.0
 

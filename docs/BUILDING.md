@@ -356,6 +356,8 @@ To make a release:
     installed version.
 
 The workflow stops when the tag and a version are different. It also stops
+when the version has a pre-release or build part: a release version is
+`MAJOR.MINOR.PATCH` only, for example `0.2.0`. It also stops
 when `CHANGELOG.md` has no section for the version. The text of that section
 becomes the "Changes" part of the release notes and the `notes` of
 `latest.json`.
@@ -372,7 +374,10 @@ finds the new version at its next check.
 The release workflow does these steps for the update:
 
 1. The job "build" builds the installer. It has no secret. Thus npm, the
-   build scripts of the crates, the bundler, and NSIS never see the key.
+   build scripts of the crates, the bundler, and NSIS never see the key. The
+   job gives the SHA-256 of the installer to the next jobs. The jobs "sign"
+   and "release" compare the downloaded installer with it and stop when it
+   is different.
 2. Only for a tag, the job "sign" signs the finished installer with
    `tauri signer sign --app-version <version>`. The job runs in the GitHub
    environment `release` and reads the secrets `TAURI_SIGNING_PRIVATE_KEY`
@@ -389,7 +394,9 @@ The release workflow does these steps for the update:
    of the tag, the address is the installer asset, and the signature is not
    empty.
 5. The job checks the signature with `minisign` and the public key of
-   `ui/tauri.conf.json`. The signed comment must have the version of the tag.
+   `ui/signing-key.pub` (the key that signs the release, see "The signing key"
+   in [DEVELOPMENT.md](DEVELOPMENT.md)). The signed comment must have the
+   version of the tag.
 6. The draft gets the installer, `<installer>.sig`, `SHA256SUMS.txt`, and
    `latest.json`. `SHA256SUMS.txt` has only the installer.
 

@@ -156,10 +156,29 @@ tag, in the GitHub environment `release`. Set it up one time:
 Without the environment, GitHub makes it at the first tag run, without
 rules and without secrets. The job "sign" then stops with an error.
 
+#### The key files of the repository
+
+Two files hold a public key, both as one base64 line:
+
+- `plugins.updater.pubkey` in `ui/tauri.conf.json`: the key that the program
+  of this version uses to check the NEXT update.
+- `ui/signing-key.pub`: the key that signs THIS release. The release job
+  checks the signature with it. It must match the secret
+  `TAURI_SIGNING_PRIVATE_KEY` of the environment `release`.
+
+Normally the two keys are the same. The constant `BRIDGE_RELEASE` in
+`ui/src/updater.rs` is `false`, and the test
+`test_the_signing_key_file_follows_the_bridge_rule` makes sure that the keys
+are equal. Only a bridge release has two different keys: then
+`BRIDGE_RELEASE` is `true`, and the test makes sure that the keys differ.
+
 #### A new key (rotation)
 
 The installed programs know only the public key of their version. Thus the
-change to a new key needs a bridge release:
+change to a new key needs a bridge release. The bridge release carries the
+NEW public key, and the OLD key signs it.
+
+The bridge release:
 
 1. In the folder `ui/web`, make a new key pair:
 
@@ -170,15 +189,25 @@ change to a new key needs a bridge release:
 2. Put the new public key (the content of the `.pub` file) into
    `plugins.updater.pubkey` of `ui/tauri.conf.json` and into the test
    `test_the_plugin_configuration_is_safe`.
-3. Release this version (the bridge release) signed with the OLD key. The
-   installed programs know only the old key. Thus they can install the
-   bridge release, and then they know the new key.
-4. Keep the bridge release as the newest release for 60 days. `latest.json`
+3. Keep `ui/signing-key.pub` on the OLD public key. Keep the secret
+   `TAURI_SIGNING_PRIVATE_KEY` of the environment `release` on the OLD
+   private key.
+4. Set `BRIDGE_RELEASE` in `ui/src/updater.rs` to `true`.
+5. Make the release as usual. The OLD key signs it. The installed programs
+   know only the old key. Thus they can install the bridge release, and then
+   they know the new key.
+6. Keep the bridge release as the newest release for 60 days. `latest.json`
    names only the newest release. A program that is still on a version before
    the bridge release can update only while the bridge release is the newest
    release.
-5. After the 60 days, replace the secret `TAURI_SIGNING_PRIVATE_KEY` of the
-   environment `release` with the new key. The next releases use the new key.
+
+The next release, after the 60 days:
+
+1. Put the NEW public key into `ui/signing-key.pub`.
+2. Put the NEW private key into the secret `TAURI_SIGNING_PRIVATE_KEY` of the
+   environment `release`.
+3. Set `BRIDGE_RELEASE` to `false`.
+4. Make the release as usual. The new key signs it and all later releases.
 
 A program that is still on a version before the bridge release when the
 first release of the new key becomes the newest release can never verify an
@@ -192,17 +221,19 @@ it for ever. A person with the key can make an installer that these programs
 accept. That person must also change the files of the GitHub release, or the
 update address, to reach the users. Do these steps at once:
 
-1. Make a bridge release with a new key, as in "A new key (rotation)". Sign
-   it with the old key: it is the only key that the installed programs know.
+1. Make a bridge release with a new key at once, as in "A new key
+   (rotation)". The old key signs it: it is the only key that the installed
+   programs know.
 2. Put a notice on the GitHub page of the project. Tell the users to update
    to the bridge release, or to install it by hand.
 
 #### A lost key
 
 Without the key, no update of the installed programs is possible. Make a new
-key pair and put its public key into the next version. Each user must install
-that version by hand from the Releases page. From then on, the new key signs
-the releases.
+key pair. Put its public key into `ui/tauri.conf.json` and into
+`ui/signing-key.pub`, and its private key into the secret. Keep
+`BRIDGE_RELEASE` `false`. Each user must install the next version by hand
+from the Releases page. From then on, the new key signs the releases.
 
 ## Live tests
 

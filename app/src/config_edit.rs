@@ -81,6 +81,7 @@ const KNOWN_KEYS: &[(&str, Kind)] = &[
     ("stt.openai_compatible.timeout_seconds", Kind::Integer),
     ("diagnostics.log_file", Kind::Text),
     ("diagnostics.save_audio_dir", Kind::Text),
+    ("updates.check", Kind::Flag),
 ];
 
 /// Tables that the program writes as inline tables, for example
@@ -1088,6 +1089,22 @@ button = 3
     }
 
     #[test]
+    fn test_set_value_updates_check_also_without_the_table() {
+        let out = set_value(EXAMPLE, "updates.check", &Value::Flag(false)).unwrap();
+        assert!(!load(&out).updates.check);
+        assert_eq!(changed_lines(EXAMPLE, &out).len(), 1, "{out}");
+        // A file of version 0.1.0 has no [updates] table: the edit adds it.
+        let old = "[edcopilot]\ndir = 'ed'\n";
+        let out = set_value(old, "updates.check", &Value::Flag(false)).unwrap();
+        assert!(!load(&out).updates.check, "{out}");
+        let out = set_value(&out, "updates.check", &Value::Flag(true)).unwrap();
+        assert!(load(&out).updates.check, "{out}");
+        // The switch is a flag, nothing else.
+        assert!(set_value(EXAMPLE, "updates.check", &Value::Text("no".into())).is_err());
+        assert!(set_value(EXAMPLE, "updates.endpoint", &Value::Text("x".into())).is_err());
+    }
+
+    #[test]
     fn test_set_value_absent_removes_a_present_key() {
         let out = set_value(EXAMPLE, "matching.threshold", &Value::Absent).unwrap();
         assert!(!out.contains("threshold = 0.8"), "{out}");
@@ -1335,10 +1352,16 @@ joystick = {"
         let threshold = out.find("threshold = 0.8").unwrap();
         assert!(threshold < comment && comment < next, "{out}");
         assert!(!out.contains("exact_single_word"), "{out}");
-        // The last key of the file: the lines stay at the end.
         let out = set_value(EXAMPLE, "diagnostics.save_audio_dir", &Value::Absent).unwrap();
-        assert!(out.trim_end().ends_with("stay on this computer."), "{out}");
+        let comment = out.find("stay on this computer.").unwrap();
+        let next = out.find("[updates]").unwrap();
+        assert!(comment < next, "{out}");
         assert!(!out.contains("save_audio_dir"), "{out}");
+        load(&out);
+        // The last key of the file: the lines stay at the end.
+        let out = set_value(EXAMPLE, "updates.check", &Value::Absent).unwrap();
+        assert!(out.trim_end().ends_with("\"Check for updates\"."), "{out}");
+        assert!(!out.contains("check = true"), "{out}");
         load(&out);
     }
 

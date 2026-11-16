@@ -39,6 +39,10 @@ pub struct Config {
     pub stt: SttConfig,
     #[serde(default)]
     pub diagnostics: DiagnosticsConfig,
+    /// The update check of the window program. The console program does
+    /// not use it.
+    #[serde(default)]
+    pub updates: UpdatesConfig,
     /// The paths that the console shows as the file gives them. See
     /// `Config::shown`.
     #[serde(skip)]
@@ -282,6 +286,23 @@ pub struct DiagnosticsConfig {
     pub log_file: PathBuf,
     /// Each utterance clip is saved as a WAV file in this directory.
     pub save_audio_dir: PathBuf,
+}
+
+/// The update check of the window program. The address of the update
+/// server is not a setting: it is fixed in the program.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct UpdatesConfig {
+    /// True: the window program asks the server for a newer version at its
+    /// start and every 24 hours. False: it asks only when the user clicks
+    /// "Check for updates".
+    pub check: bool,
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        UpdatesConfig { check: true }
+    }
 }
 
 fn logical_cores() -> usize {
@@ -1580,6 +1601,50 @@ mod tests {
                     && text == &request_file_problem(&config.edcopilot.request_file)),
             "{keyed:?}"
         );
+    }
+
+    #[test]
+    fn test_updates_check_defaults_to_on_and_reads_the_file() {
+        // A file of version 0.1.0 has no [updates] table: the check is on.
+        assert!(minimal().updates.check);
+        let example = include_str!("../voicebridge.example.toml");
+        let config = Config::parse(example, Path::new("."), "example").unwrap();
+        assert!(config.updates.check);
+        assert!(
+            example.lines().any(|line| line.trim_end() == "[updates]"),
+            "the example has the table"
+        );
+
+        let off = Config::parse(
+            "[edcopilot]\ndir = 'ed'\n[updates]\ncheck = false\n",
+            Path::new("."),
+            "t.toml",
+        )
+        .unwrap();
+        assert!(!off.updates.check);
+        // An empty table keeps the default.
+        let empty = Config::parse(
+            "[edcopilot]\ndir = 'ed'\n[updates]\n",
+            Path::new("."),
+            "t.toml",
+        )
+        .unwrap();
+        assert!(empty.updates.check);
+        // No other key: for example no address of the update server.
+        let error = Config::parse(
+            "[edcopilot]\ndir = 'ed'\n[updates]\nendpoint = 'https://example.invalid'\n",
+            Path::new("."),
+            "t.toml",
+        )
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("endpoint"), "{error:#}");
+        // A text is not a flag.
+        assert!(Config::parse(
+            "[edcopilot]\ndir = 'ed'\n[updates]\ncheck = 'no'\n",
+            Path::new("."),
+            "t.toml",
+        )
+        .is_err());
     }
 
     #[test]

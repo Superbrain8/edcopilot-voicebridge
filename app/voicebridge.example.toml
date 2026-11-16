@@ -103,3 +103,10 @@ log_file = ""
 # only for this: the program deletes its oldest audio files there. It keeps
 # the newest 500 files. The files hold your voice and stay on this computer.
 save_audio_dir = ""
+
+[updates]
+# The window program asks the GitHub page of the project for the newest
+# version at its start and every 24 hours. It sends no data about you. It asks
+# you before it installs an update. false: it asks only when you click
+# "Check for updates".
+check = true

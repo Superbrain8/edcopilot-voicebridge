@@ -1,0 +1,4 @@
+# The development mode watches this folder and starts the program again
+# after a change. The watch is for the Rust files. The web part has its own
+# watch in Vite.
+web/

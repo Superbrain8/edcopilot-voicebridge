@@ -1,0 +1,26 @@
+# Rust
+/target/
+**/target/
+*.rs.bk
+# Cargo.lock is kept (this repository ships a program).
+
+# Tauri / frontend
+node_modules/
+ui/web/dist/
+# Tauri makes the schema files of the capabilities at each build.
+ui/gen/
+
+# OS
+.DS_Store
+Thumbs.db
+__pycache__/
+
+# Local configuration of the console program (machine paths).
+/voicebridge.toml
+
+# Utterance log and saved audio clips of the user (tuning data).
+/logs/
+
+# Private test data that holds EDCoPilot text or recordings: the live
+# probes, the map snapshots, and the speech clips of the stt tests.
+/private/

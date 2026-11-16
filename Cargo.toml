@@ -1,0 +1,6 @@
+[workspace]
+resolver = "2"
+members = ["core", "audio", "stt", "app", "ui"]
+
+[workspace.package]
+license = "GPL-3.0-or-later"

@@ -1,0 +1,27 @@
+[package]
+name = "edcopilot-voicebridge-core"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+notify = "8"
+toml = "0.8"
+strsim = "0.11.1"
+# The profile builder. The pure-Rust backend: the workspace links the static C runtime.
+flate2 = { version = "=1.1.11", default-features = false, features = ["rust_backend"] }
+sha2 = "=0.10.9"
+
+[features]
+# The synthetic profile for the tests of the other crates (`profile::fixture`).
+# Only a `[dev-dependencies]` entry enables it. A normal build does not.
+test-support = []
+
+[dev-dependencies]
+tempfile = "3"
+# Only the live tests write and read the private snapshot as JSON.
+serde_json = "=1.0.154"
+# The integration tests of this crate use the synthetic profile too.
+edcopilot-voicebridge-core = { path = ".", features = ["test-support"] }

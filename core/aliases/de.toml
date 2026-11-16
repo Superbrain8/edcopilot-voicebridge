@@ -1,0 +1,5 @@
+# Extra spoken phrases for the German language.
+# Key: the command's token template, exactly as in the command map.
+# Value: list of phrases in VoiceAttack grammar syntax.
+# Use single quotes for keys: templates hold double quotes and braces.
+'OpenVoiceLogPanel' = ["sprachprotokoll [öffnen; zeigen;]"]

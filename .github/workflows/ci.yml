@@ -1,0 +1,114 @@
+# Continuous integration: format, lint, build and test on Windows.
+#
+# Do not set RUSTFLAGS in this workflow. RUSTFLAGS replaces the rustflags
+# of .cargo/config.toml (+crt-static), and the static sherpa-onnx libraries
+# then give the linker warning LNK4098.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep these values the same as in release.yml and docs/BUILDING.md.
+  RUST_TOOLCHAIN: "1.97.1"
+  NODE_VERSION: "24"
+  # The prebuilt static libraries for the crate sherpa-onnx-sys =2.0.1.
+  # The SHA-256 is the "digest" of the official release asset. It is equal
+  # to the hash of the archive that the build script of the crate got.
+  SHERPA_ONNX_STEM: sherpa-onnx-v2.0.1-win-x64-static-MT-Release-lib
+  SHERPA_ONNX_URL: https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-win-x64-static-MT-Release-lib.tar.bz2
+  SHERPA_ONNX_SHA256: 23e7b986b197eda0bbc47ff3d7d5c87afd6ef2b9077214ba26b0f1ec52ef0e66
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  check:
+    name: Check (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the Rust toolchain
+        run: |
+          rustup toolchain install $env:RUST_TOOLCHAIN --profile minimal --component clippy,rustfmt
+          rustup default $env:RUST_TOOLCHAIN
+          rustc --version
+          cargo --version
+
+      - name: Cache the Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          # Pull requests read the cache. Only pushes write it.
+          save-if: ${{ github.event_name == 'push' }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ui/web/package-lock.json
+
+      # Keep this step the same as in release.yml.
+      # Without SHERPA_ONNX_LIB_DIR, the build script of sherpa-onnx-sys
+      # downloads the same archive, but it does not check a hash.
+      - name: Get the sherpa-onnx libraries (pinned SHA-256)
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'sherpa-onnx'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $archive = Join-Path $dir "$env:SHERPA_ONNX_STEM.tar.bz2"
+          curl.exe --fail --location --silent --show-error --retry 3 --output $archive $env:SHERPA_ONNX_URL
+          if ($LASTEXITCODE -ne 0) { throw "The download of $env:SHERPA_ONNX_URL failed." }
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $archive).Hash.ToLowerInvariant()
+          if ($hash -ne $env:SHERPA_ONNX_SHA256) {
+            throw "SHA-256 mismatch for the sherpa-onnx archive: expected $env:SHERPA_ONNX_SHA256, got $hash."
+          }
+          & "$env:SystemRoot\System32\tar.exe" -xjf $archive -C $dir
+          if ($LASTEXITCODE -ne 0) { throw "tar could not unpack the sherpa-onnx archive." }
+          Remove-Item -Path $archive
+          $lib = Join-Path $dir "$env:SHERPA_ONNX_STEM\lib"
+          if (-not (Test-Path (Join-Path $lib 'onnxruntime.lib'))) { throw "No onnxruntime.lib in $lib." }
+          "SHERPA_ONNX_LIB_DIR=$lib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install the web dependencies
+        working-directory: ui/web
+        run: npm ci
+
+      - name: Check the web part (svelte-check, tsc)
+        working-directory: ui/web
+        run: npm run check
+
+      - name: Test the web part (Vitest)
+        working-directory: ui/web
+        run: npm test
+
+      - name: Check the Rust format
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      # The test build enables the core feature "test-support". This normal
+      # build makes sure that the programs compile without it.
+      - name: Build the console program and the window program
+        run: cargo build -p voicebridge -p voicebridge-ui --locked
+
+      - name: Run the Rust tests
+        run: cargo test --workspace --locked

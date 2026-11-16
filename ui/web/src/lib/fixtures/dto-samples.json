@@ -1,0 +1,472 @@
+{
+  "source": "The JSON of the DTOs of ui/src/dto.rs. The Rust test dto::tests::test_fixture_samples_are_the_json_of_the_dtos builds each value and compares. dto-samples.ts must have the same data with its types.",
+  "events": {
+    "warning_with_prefix_removed": { "type": "warning", "text": "vocabulary directory not found: x" },
+    "warning": { "type": "warning", "text": "worker busy" },
+    "talk_down": { "type": "talk", "down": true },
+    "talk_up": { "type": "talk", "down": false },
+    "dropped": { "type": "dropped", "reason": "waited 5000 ms" },
+    "vocabulary_reloaded": { "type": "vocabulary_reloaded", "files": 3, "names": 12 },
+    "stopped_requested": {
+      "type": "stopped",
+      "reason": { "kind": "requested", "message": null },
+      "glitches": 0
+    },
+    "stopped_device_error": {
+      "type": "stopped",
+      "reason": { "kind": "device_error", "message": "device removed" },
+      "glitches": 2
+    },
+    "started": {
+      "type": "started",
+      "info": {
+        "report": {
+          "line": "loaded 2988 commands (2000 matchable, 0 composite parts, 0 with unresolved grammar), 0 vocabulary files with 0 names, 0 alias phrases, 0 sound-alike entries, 0 synonym entries, 0 filler words",
+          "commands": 2988,
+          "matchable": 2000,
+          "unresolved_grammar": 0,
+          "composite_parts": 0,
+          "vocabulary_files": 0,
+          "vocabulary_names": 0,
+          "alias_phrases": 0,
+          "sound_alikes": 0,
+          "synonyms": 0,
+          "synonym_warnings": [],
+          "fillers": 0,
+          "fillers_active": false,
+          "filler_warnings": [],
+          "problems": []
+        },
+        "engine": "parakeet",
+        "mode": "push_to_talk",
+        "mode_line": "push to talk, key \"F13\"",
+        "input_device": null,
+        "threads": 4,
+        "dry_run": true,
+        "hotwords_line": "hotwords: off",
+        "diagnostics_lines": [],
+        "lines": [
+          "loaded 2988 commands (2000 matchable, 0 composite parts, 0 with unresolved grammar), 0 vocabulary files with 0 names, 0 alias phrases, 0 sound-alike entries, 0 synonym entries, 0 filler words",
+          "hotwords: off",
+          "engine: parakeet",
+          "mode: push to talk, key \"F13\"",
+          "input device: default input device",
+          "threads: 4",
+          "dry run: no request file is written"
+        ]
+      }
+    },
+    "utterance_dry_run": {
+      "type": "utterance",
+      "outcome": {
+        "kind": "dry_run",
+        "text": "cheapest by bid cork",
+        "token": "BuyTop:Cork",
+        "confidence": 0.95,
+        "reason": null,
+        "blocked": null,
+        "marks": ["sound_alike", "filler", "hotwords", "glitch", "clipping"]
+      },
+      "transcribe_ms": 120,
+      "total_ms": 345,
+      "clip_ms": 2140,
+      "peak_dbfs": -0.05,
+      "rms_dbfs": -20.0,
+      "audio_file": "utt-1.wav"
+    }
+  },
+  "outcomes": {
+    "rejected": {
+      "kind": "rejected",
+      "text": "a",
+      "token": "T",
+      "confidence": 0.5,
+      "reason": "below the threshold",
+      "blocked": null,
+      "marks": ["synonym"]
+    }
+  },
+  "status": {
+    "never_started": {
+      "running": false,
+      "starting": false,
+      "dry_run": false,
+      "start_info": null,
+      "stop_reason": null
+    },
+    "starting": {
+      "running": false,
+      "starting": true,
+      "dry_run": false,
+      "start_info": null,
+      "stop_reason": null
+    },
+    "stopped_after_device_error": {
+      "running": false,
+      "starting": false,
+      "dry_run": true,
+      "start_info": null,
+      "stop_reason": { "kind": "device_error", "message": "gone" }
+    }
+  },
+  "config": {
+    "path": "voicebridge.toml",
+    "api_key_set": true,
+    "api_key_host": "https://api.openai.com",
+    "default_hotwords_file": "C:\\Users\\x\\AppData\\Roaming\\VoiceBridge\\hotwords.txt",
+    "version": "0123456789abcdef-42",
+    "edcopilot": {
+      "dir": "C:\\EDCoPilot",
+      "request_file": "",
+      "voice_commands_ini": "",
+      "dynamic_vars_dir": "",
+      "profile": "",
+      "profile_in_use": "C:\\EDCoPilot\\EDCoPilot-Profile.vap"
+    },
+    "data": {
+      "aliases_dir": "core/aliases",
+      "sound_alikes": "core/data/sound_alikes.toml",
+      "synonyms": "core/data/synonyms.toml",
+      "fillers": "core/data/fillers.toml"
+    },
+    "matching": { "threshold": 0.8, "exact_single_word": true },
+    "microphone": { "device": "", "mode": "push_to_talk", "vad_threshold_dbfs": -40.0 },
+    "push_to_talk": { "key": "F13", "joystick": null, "pre_roll_ms": 250, "release_tail_ms": 300 },
+    "always_listening": { "wake_words": ["copilot", "co pilot"] },
+    "stt": {
+      "engine": "parakeet",
+      "parakeet": { "model_dir": "", "threads": 4, "hotwords_file": "", "hotwords_score": 1.5 },
+      "openai_compatible": {
+        "base_url": "https://api.openai.com/v1",
+        "base_url_problem": null,
+        "api_key_env": "OPENAI_API_KEY",
+        "model": "gpt-4o-mini-transcribe",
+        "language": "",
+        "timeout_seconds": 10
+      }
+    },
+    "diagnostics": { "log_file": "", "save_audio_dir": "" }
+  },
+  "check": {
+    "loaded": {
+      "problems": ["p"],
+      "warnings": ["w"],
+      "report": {
+        "line": "loaded 0 commands (0 matchable, 0 composite parts, 0 with unresolved grammar), 0 vocabulary files with 0 names, 0 alias phrases, 0 sound-alike entries, 0 synonym entries, 0 filler words",
+        "commands": 0,
+        "matchable": 0,
+        "unresolved_grammar": 0,
+        "composite_parts": 0,
+        "vocabulary_files": 0,
+        "vocabulary_names": 0,
+        "alias_phrases": 0,
+        "sound_alikes": 0,
+        "synonyms": 0,
+        "synonym_warnings": [],
+        "fillers": 0,
+        "fillers_active": false,
+        "filler_warnings": [],
+        "problems": []
+      },
+      "profile": {"records": 2, "left_out": 3, "lines": ["commands from the EDCoPilot profile: 2 commands, 3 left out", "left out, 2 commands: an action type that the program does not know: 99, for example \"hoist the lantern\"", "the EDCoPilot profile changed: 1 commands added, 0 removed, 1 now left out, 0 now in the map"]},
+      "edcopilot_problems": [],
+      "info": ["push-to-talk: key \"F13\""]
+    },
+    "not_loaded": {
+      "problems": ["bad"],
+      "warnings": [],
+      "report": null,
+      "profile": null,
+      "edcopilot_problems": [],
+      "info": []
+    },
+    "no_profile": {
+      "problems": ["cannot read the EDCoPilot profile D:\\ED\\EDCoPilot-Profile.vap: the file does not exist, set the EDCoPilot folder, or start EDCoPilot one time to make the file"],
+      "warnings": [],
+      "report": null,
+      "profile": null,
+      "edcopilot_problems": ["cannot read the EDCoPilot profile D:\\ED\\EDCoPilot-Profile.vap: the file does not exist, set the EDCoPilot folder, or start EDCoPilot one time to make the file"],
+      "info": []
+    }
+  },
+  "left_out_list": {"rows": [{"class": "no_write", "line": "left out: \"polish the brass\" (no_write): the command writes no request"}, {"class": "not_understood", "line": "left out: \"hoist the lantern\" (not_understood): an action type that the program does not know: 99"}, {"class": "not_understood", "line": "left out: \"lower the lantern\" (not_understood): an action type that the program does not know: 99"}], "offset": 0, "total": 3, "catalog_id": 7},
+  "save": {
+    "written_with_old_problem": {
+      "problems": ["stt.parakeet.model_dir is empty, the parakeet engine needs it"],
+      "written": true,
+      "restart_needed": false
+    },
+    "refused": {
+      "problems": ["matching.threshold must be between 0.0 and 1.0"],
+      "written": false,
+      "restart_needed": false
+    }
+  },
+  "key_result": {
+    "restart_needed": { "restart_needed": true },
+    "no_restart": { "restart_needed": false }
+  },
+  "binding": {
+    "key": { "kind": "key", "label": "key \"F13\"", "key": "F13", "joystick": null },
+    "joystick": {
+      "kind": "joystick",
+      "label": "joystick \"MOZA\" button 5",
+      "key": null,
+      "joystick": { "device": "MOZA", "button": 5 }
+    }
+  },
+  "model_events": {
+    "progress": { "type": "progress", "done": 1048576, "total": 487211443 },
+    "verifying": { "type": "verifying" },
+    "unpacking": { "type": "unpacking" },
+    "done": {
+      "type": "done",
+      "model_dir": "C:\\Users\\x\\AppData\\Roaming\\VoiceBridge\\models\\m",
+      "config_error": null,
+      "restart_needed": true
+    },
+    "done_not_saved": {
+      "type": "done",
+      "model_dir": "D:\\models\\m",
+      "config_error": "the file does not load",
+      "restart_needed": false
+    },
+    "failed": { "type": "failed", "message": "the downloaded file is damaged" },
+    "cancelled": { "type": "cancelled" }
+  },
+  "model_info": {
+    "idle": {
+      "name": "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
+      "archive_bytes": 487211443,
+      "unpacked_bytes": 671341917,
+      "models_dir": "C:\\Users\\x\\AppData\\Roaming\\VoiceBridge\\models",
+      "running": false,
+      "step": null
+    },
+    "unpacking": {
+      "name": "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
+      "archive_bytes": 487211443,
+      "unpacked_bytes": 671341917,
+      "models_dir": "C:\\Users\\x\\AppData\\Roaming\\VoiceBridge\\models",
+      "running": true,
+      "step": { "type": "unpacking" }
+    }
+  },
+  "command_list": {
+    "offset": 0,
+    "total": 3,
+    "catalog_id": 7,
+    "rows": [
+      {
+        "category": "Harbour traffic",
+        "phrase": "[Let's row home; sail out for home]",
+        "token": "SailOutForHome",
+        "works": true,
+        "reason": null,
+        "alias": false
+      },
+      {
+        "category": "Harbour traffic",
+        "phrase": "heimweg",
+        "token": "SailOutForHome",
+        "works": true,
+        "reason": null,
+        "alias": true
+      },
+      {
+        "category": "",
+        "phrase": "{TXT:EDCP_X} <b>&amp;</b>",
+        "token": "Say=\"x\"",
+        "works": false,
+        "reason": "does not work: grammar not found in the voice commands file",
+        "alias": false
+      }
+    ],
+    "composite": [
+      {
+        "heading": "Composite group \"trade lookup\": say one prefix and one suffix as one sentence",
+        "lines": [
+          "prefix: [best;] local [sell; buy]  (sets offer_scope = Local:)",
+          "suffix: [price for;] cork  ->  {TXT:TradeSide}Cork"
+        ]
+      }
+    ],
+    "summary": "3 shown. 2 of 3 phrases work (commands and aliases). 1 composite groups. 0 synonyms. 0 filler words.",
+    "problems": ["vocabulary directory not found: D:\\ED\\Dynamic var files"],
+    "warnings": ["synonym \"navigate\" is a word of a command phrase"]
+  },
+  "phrase_test": {
+    "dry_run": {
+      "outcome": {
+        "kind": "dry_run",
+        "text": "help chart log",
+        "token": "Guide:Panel:ChartLog",
+        "confidence": 1.0,
+        "reason": null,
+        "blocked": null,
+        "marks": []
+      },
+      "line": "dry run \"help chart log\" -> Guide:Panel:ChartLog (1.00)",
+      "warnings": [],
+      "wake_words": []
+    },
+    "rejected": {
+      "outcome": {
+        "kind": "rejected",
+        "text": "belays",
+        "token": "Belay",
+        "confidence": 0.83,
+        "reason": "a phrase of one word needs an exact match",
+        "blocked": null,
+        "marks": []
+      },
+      "line": "rejected \"belays\" -> Belay (0.83): a phrase of one word needs an exact match",
+      "warnings": ["vocabulary directory not found: D:\\ED\\Dynamic var files"],
+      "wake_words": []
+    },
+    "no_match": {
+      "outcome": {
+        "kind": "no_match",
+        "text": "<script>x</script>",
+        "token": null,
+        "confidence": null,
+        "reason": null,
+        "blocked": null,
+        "marks": []
+      },
+      "line": "no match for \"<script>x</script>\"",
+      "warnings": [],
+      "wake_words": []
+    },
+    "no_match_blocked": {
+      "outcome": {
+        "kind": "no_match",
+        "text": "lock the lantern",
+        "token": null,
+        "confidence": null,
+        "reason": "blocked: the text is a phrase of a command that the program cannot send",
+        "blocked": "no_token",
+        "marks": []
+      },
+      "line": "no match for \"lock the lantern\": blocked: the text is a phrase of a command that the program cannot send",
+      "warnings": [],
+      "wake_words": []
+    },
+    "no_match_tie": {
+      "outcome": {
+        "kind": "no_match",
+        "text": "close the gate",
+        "token": null,
+        "confidence": null,
+        "reason": null,
+        "blocked": "tie",
+        "marks": []
+      },
+      "line": "no match for \"close the gate\"",
+      "warnings": [],
+      "wake_words": []
+    },
+    "no_wake_word": {
+      "outcome": {
+        "kind": "no_wake_word",
+        "text": "help chart log",
+        "token": null,
+        "confidence": null,
+        "reason": null,
+        "blocked": null,
+        "marks": []
+      },
+      "line": "no wake word in \"help chart log\"",
+      "warnings": [],
+      "wake_words": ["copilot", "co pilot"]
+    }
+  },
+  "table": {
+    "synonyms": {
+      "kind": "synonyms",
+      "language": null,
+      "path": "D:\\vb\\core\\data\\synonyms.toml",
+      "exists": true,
+      "rows": [
+        { "spoken": "navigate to", "meant": ["sail out to", "sail out for"] },
+        { "spoken": "<b>x</b>", "meant": ["{TXT:EDCP_X}"] }
+      ],
+      "version": "00ab-12",
+      "hotwords_off": true,
+      "languages": []
+    },
+    "new_language": {
+      "kind": "aliases",
+      "language": "fr",
+      "path": "D:\\vb\\core\\aliases\\fr.toml",
+      "exists": false,
+      "rows": [],
+      "version": "absent",
+      "hotwords_off": true,
+      "languages": ["de"]
+    },
+    "hotwords_off": {
+      "kind": "hotwords",
+      "language": null,
+      "path": "D:\\vb\\core\\data\\hotwords.txt",
+      "exists": true,
+      "rows": [
+        { "spoken": "Sol", "meant": [] },
+        { "spoken": "Varnick", "meant": [] }
+      ],
+      "version": "00ab-12",
+      "hotwords_off": true,
+      "languages": []
+    }
+  },
+  "table_check": {
+    "problems": [
+      "stt.parakeet.hotwords_file: the hotword \"Siris\" is near the hotword \"Sirius\" (word similarity 0.83)"
+    ],
+    "warnings": [
+      "synonym \"sail out\" is also in the phrase \"sail out to <System>\" -> SailTo: the synonym applies only when the text as heard matches no command"
+    ]
+  },
+  "table_save": {
+    "written_while_running": {
+      "written": true,
+      "problems": [],
+      "warnings": [],
+      "unconfirmed": [],
+      "version": "00cd-14",
+      "restart_needed": true
+    },
+    "refused_problem": {
+      "written": false,
+      "problems": ["row 1: the first field is empty"],
+      "warnings": [],
+      "unconfirmed": [],
+      "version": "00cd-14",
+      "restart_needed": false
+    },
+    "refused_unconfirmed": {
+      "written": false,
+      "problems": [],
+      "warnings": ["synonym \"sail out\" is also in a phrase"],
+      "unconfirmed": ["synonym \"sail out\" is also in a phrase"],
+      "version": "00cd-14",
+      "restart_needed": false
+    }
+  },
+  "startup": {
+    "updated": {
+      "problem": null,
+      "first_start_error": null,
+      "notes": ["The program reads the commands from the EDCoPilot profile now. The update removed data.command_map and data.profile_vars from the configuration."],
+      "update_problems": [],
+      "data_dir": "C:\\Users\\x\\AppData\\Roaming\\VoiceBridge"
+    },
+    "dev_build": {
+      "problem": "this is a development build, start it with --config <file>, or set VOICEBRIDGE_DEV_DATA_DIR to an absolute scratch folder",
+      "first_start_error": null,
+      "notes": [],
+      "update_problems": [],
+      "data_dir": null
+    }
+  }
+}

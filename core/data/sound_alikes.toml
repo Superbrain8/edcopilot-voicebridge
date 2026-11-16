@@ -1,0 +1,34 @@
+# Sound-alike words: a speech engine writes a real word that sounds like the
+# command word. The matcher tries these replacements only when the text as
+# heard (and its number variants) found no candidate. A tie or a blocked
+# match at or above the threshold ends the search: then a replacement never
+# decides it. A text as heard that stays below the threshold has no candidate.
+#
+# Format: heard = "meant", one word each, in lower case, under the one table
+# below.
+#
+# A heard word can be a command word in other phrases ("cell", "by",
+# "higher" and "lock" are words of some command phrases). Those phrases
+# match as heard, so the replacement is not tried.
+# Safety comes from this order and from the probes in
+# core/tests/sound_alikes.rs. Add probes when you add an entry.
+#
+# "sale" is not here: "sale" is a word of command phrases, and a replacement
+# "sale" -> "sell" could change a command that matches as heard.
+
+[sound_alikes]
+cell = "sell"
+by = "buy"
+bye = "buy"
+soul = "sol"
+seoul = "sol"
+sole = "sol"
+sail = "sale"
+higher = "highest"
+lock = "log"
+kurs = "course"
+free = "three"
+# "to" comes out as "two" or "too". A phrase with a real "two" (the name of a
+# model with a number, for example) matches as heard.
+two = "to"
+too = "to"

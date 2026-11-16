@@ -1,0 +1,24 @@
+[package]
+name = "edcopilot-voicebridge-stt"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[features]
+default = ["local", "cloud"]
+# Local engine: NVIDIA Parakeet through sherpa-onnx.
+local = ["dep:sherpa-onnx"]
+# Cloud engine: any OpenAI-compatible transcription service.
+cloud = ["dep:reqwest", "dep:serde_json"]
+
+[dependencies]
+anyhow = "1"
+hound = "3"
+reqwest = { version = "0.12", optional = true, features = ["blocking", "multipart", "json"] }
+serde_json = { version = "1", optional = true }
+sherpa-onnx = { version = "=2.0.1", optional = true }
+# The URL parser of reqwest. The host checks use the same parser.
+url = "=2.5.8"
+
+[dev-dependencies]
+tiny_http = "0.12"

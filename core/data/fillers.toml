@@ -1,0 +1,31 @@
+# Filler words: small words of natural speech that the EDCoPilot grammar
+# does not have. A phrase with "for a" before a size then works like the
+# grammar phrase without these words.
+#
+# Format: two lists of words in lower case. A word has letters only. Both
+# lists are necessary. A list can be empty.
+#
+# - not_last: the program does not drop these words when they are the last
+#   spoken word. A sentence that stops after "the" or "for" is not complete.
+# - may_be_last: hesitation and politeness words. The program can drop them
+#   also at the end (a phrase that ends with "please").
+#
+# Rules:
+# - The program tries the text as heard first, then the number forms, the
+#   synonyms and the sound-alike words. It drops filler words only when all
+#   of these give no candidate. A tie or a blocked match ends the search.
+# - The program tries each combination of dropped filler words. If two
+#   combinations give different commands, the result is no match.
+# - A text with more than 3 filler words gets no filler step.
+# - A filler word in a whole name (a name that starts with "The") is not
+#   dropped.
+# - A dropped "for" or a dropped letter ("a") next to a number or a name
+#   gives no match. "for" can be "four", and "a" can be a part of a name.
+# - Filler words apply only in push_to_talk mode.
+#
+# Do not add a word that can change the command: "to", "of", "in", "not",
+# "no", "on", "off", "dont". Add probes in core/tests/fillers.rs when you
+# add a word.
+
+not_last = ["a", "an", "the", "for"]
+may_be_last = ["uh", "um", "please"]

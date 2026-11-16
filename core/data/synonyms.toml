@@ -1,0 +1,28 @@
+# Phrase synonyms: your own words for a phrase of EDCoPilot. A synonym works
+# in every command that uses the phrase. "navigate to Sol" then works like
+# "set course to Sol".
+#
+# Format, under the one table below:
+#   "spoken phrase" = ["edcopilot phrase", "other edcopilot phrase"]
+#   "spoken phrase" = "edcopilot phrase"
+# Write the words in lower case. A word can have letters, digits, ' and -.
+#
+# Rules:
+# - The program tries the text as heard first. A synonym applies only when
+#   the text as heard (and its number forms) matches no command.
+# - At each place in the text, the longest key wins ("navigate to" before
+#   "navigate"). Each value gives one form of the text.
+# - If two values give different commands, the result is no match.
+# - Do not use words of a command phrase as a key. "voicebridge check" warns
+#   about such a key.
+
+[synonyms]
+"navigate to" = ["set course to", "set course for"]
+"navigate" = ["set course for", "set course to"]
+# The speech engine writes these texts for "navigate to" (seen 5 and 1 times).
+"now we get to" = ["set course to", "set course for"]
+"navigator" = ["set course to", "set course for"]
+# "navigate to" with "to" heard as "two" or "too". The sound-alike table
+# cannot do this: the program does not apply a synonym after a sound-alike.
+"navigate two" = ["set course to", "set course for"]
+"navigate too" = ["set course to", "set course for"]

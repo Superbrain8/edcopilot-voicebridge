@@ -1,0 +1,14 @@
+# Hotwords for the local engine (stt.parakeet.hotwords_file).
+# One phrase on each line. A line that starts with "#" is a comment.
+# The case is important: write a name as the model writes it ("Sol").
+# The engine uses these words only in a second pass, when the first text
+# gives no command. Keep the list short: a long list makes the text worse.
+# A hotword must not be near another hotword or a name of the vocabulary
+# ("Siris" and "Sirius"): check and run refuse such a list.
+Sol
+Deciat
+Alioth
+Achenar
+Deriso
+Ceos
+Sothis

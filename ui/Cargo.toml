@@ -1,0 +1,47 @@
+[package]
+name = "voicebridge-ui"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+description = "Desktop user interface of EDCoPilot VoiceBridge"
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.5", features = ["tray-icon"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+voicebridge = { path = "../app" }
+edcopilot-voicebridge-core = { path = "../core" }
+edcopilot-voicebridge-stt = { path = "../stt" }
+edcopilot-voicebridge-audio = { path = "../audio" }
+keyring = "=4.2.0"
+tauri-plugin-dialog = "=2.8.4"
+# One program at a time: a second start shows the first window.
+tauri-plugin-single-instance = "=2.5.5"
+# The model download. reqwest is the HTTP client of the cloud engine (the
+# stt crate). bzip2 uses the pure Rust libbz2-rs-sys back end: no C library.
+reqwest = { version = "=0.12.28", features = ["blocking"] }
+url = "=2.5.8"
+sha2 = "=0.10.9"
+bzip2 = "=0.6.1"
+tar = { version = "=0.4.46", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+# The free disk space, and ShellExecuteExW for "Open folder" of the
+# Diagnostics screen.
+windows-sys = { version = "=0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Registry",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+# The synthetic profile for the tests. Only the tests get the feature.
+edcopilot-voicebridge-core = { path = "../core", features = ["test-support"] }
+tempfile = "3"
+tiny_http = "=0.12.0"

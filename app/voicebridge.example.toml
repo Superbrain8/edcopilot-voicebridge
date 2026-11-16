@@ -1,0 +1,105 @@
+# VoiceBridge configuration. Copy this file to voicebridge.toml and edit it.
+# Relative paths start at the folder of this file.
+
+[edcopilot]
+# The EDCoPilot folder. Required.
+dir = "C:\\EDCoPilot"
+# The four paths below default from dir. Remove the comment mark to change one.
+# request_file = "C:\\EDCoPilot\\EDCoPilot.request.txt"
+# voice_commands_ini = "C:\\EDCoPilot\\working\\EDCoPilot.VoiceCommands.ini"
+# dynamic_vars_dir = "C:\\EDCoPilot\\Dynamic var files"
+# The program reads the commands from this EDCoPilot profile.
+# profile = "C:\\EDCoPilot\\EDCoPilot-Profile.vap"
+
+[data]
+# The alias folder.
+aliases_dir = "core/aliases"
+# Words that sound like a command word ("cell" for "sell"). The program tries
+# the number forms first, and these words only when both give no candidate.
+sound_alikes = "core/data/sound_alikes.toml"
+# Your own words for the words of a phrase. They work in every command. The
+# program tries them only when no candidate of the text as heard reached the
+# threshold. A blocked text as heard (a tie, or required words that are not
+# good enough) also stops the synonyms.
+synonyms = "core/data/synonyms.toml"
+# Small words that the grammar does not have ("uh", "the", "for a"). The
+# program drops them only when all the steps above give no candidate. If two
+# ways to drop them give different commands, the result is no match. They
+# apply only in push_to_talk mode.
+fillers = "core/data/fillers.toml"
+
+[matching]
+# Minimum confidence from 0.0 to 1.0. A higher value gives fewer wrong actions.
+threshold = 0.8
+# A phrase of one word needs confidence 1.0.
+exact_single_word = true
+
+[microphone]
+# Part of the device name. Empty means the default device.
+device = ""
+# "push_to_talk" or "always_listening".
+mode = "push_to_talk"
+# Speech starts above this level in dBFS.
+vad_threshold_dbfs = -40.0
+
+[push_to_talk]
+# A keyboard key: a name (F13, RControl), one character that the key gives
+# without Shift or AltGr ("<"), a code (vk:226), or Mouse4 or Mouse5.
+# Run "voicebridge bind" to set it with a key press.
+# Use this key or a joystick button, not both.
+key = "F13"
+# A joystick button. Remove the key line above if you use this line.
+# joystick = { device = "MOZA", button = 5 }
+# Milliseconds of audio before the press that the recording keeps (0 to 2000).
+pre_roll_ms = 250
+# Milliseconds of audio after the release that the recording keeps (0 to 2000).
+# This time adds to the reaction time. 0 switches the part off.
+release_tail_ms = 300
+
+[always_listening]
+# Optional. The text must start with one of these words. An empty list means
+# no wake word. We recommend a wake word: without it, other speech near the
+# microphone can start a command.
+wake_words = ["copilot", "co pilot"]
+
+[stt]
+# "parakeet" for the local model, or "openai_compatible" for a cloud service.
+engine = "parakeet"
+
+[stt.parakeet]
+# The folder of the local model. Required for the parakeet engine.
+model_dir = ""
+# Processor cores for the local model.
+threads = 4
+# Hotwords: names that the model often hears wrong ("Sol" as "soul"). They
+# are off. To switch them on, set hotwords_file = "core/data/hotwords.txt".
+# When the first text gives no command, the engine then makes a second text
+# with a bias toward these names. The second text may only confirm a
+# command: it may change only the hotwords, or give the token of a rejected
+# match. Costs: approximately 700 MB more memory, approximately 1.2 seconds
+# more at start, and a second decode (approximately 0.1 seconds) for each
+# utterance that gives no command.
+hotwords_file = ""
+# The bias of the second pass, from 0.1 to 4.0. A higher value can change
+# words that are not names.
+hotwords_score = 1.5
+
+[stt.openai_compatible]
+base_url = "https://api.openai.com/v1"
+# The name of the environment variable that holds the API key.
+api_key_env = "OPENAI_API_KEY"
+model = "gpt-4o-mini-transcribe"
+# Empty means the service detects the language.
+language = ""
+timeout_seconds = 10
+
+[diagnostics]
+# Data for tuning. An empty value switches the part off.
+# A file that gets one line for each utterance: the time, the result, the
+# heard text, the token, the confidence, the times, the audio file name, the
+# peak and RMS levels, and the marks.
+log_file = ""
+# A directory for the audio of each utterance (16 kHz, 32-bit float WAV). Use a directory
+# only for this: the program deletes its oldest audio files there. It keeps
+# the newest 500 files. The files hold your voice and stay on this computer.
+save_audio_dir = ""

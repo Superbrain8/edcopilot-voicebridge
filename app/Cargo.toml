@@ -1,0 +1,30 @@
+[package]
+name = "voicebridge"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+anyhow = "1"
+serde_json = "=1.0.154"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+edcopilot-voicebridge-core = { path = "../core" }
+edcopilot-voicebridge-audio = { path = "../audio" }
+edcopilot-voicebridge-stt = { path = "../stt" }
+clap = { version = "4.6.7", features = ["derive"] }
+ctrlc = "3.5.2"
+toml_edit = "0.22.27"
+tempfile = "3"
+
+[dev-dependencies]
+# The synthetic profile for the tests. Only the tests get the feature.
+edcopilot-voicebridge-core = { path = "../core", features = ["test-support"] }
+hound = "3"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Console"] }
+
+# O_NOFOLLOW for the session lock file. std has no constant for it.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

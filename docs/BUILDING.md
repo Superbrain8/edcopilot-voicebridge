@@ -228,16 +228,39 @@ Thus they cannot run at the same time.
    $env:CARGO_TARGET_DIR = "$PWD\target\installer"
    ```
 
-4. In the folder `ui/web`, build the installer:
+4. In the folder `ui/web`, build the installer without the updater
+   signature:
 
    ```powershell
-   npm run tauri build
+   npm run tauri build -- --config no-updater-artifacts.conf.json
    ```
 
 The build makes the web part, the release program, and the NSIS installer.
 The installer is in `<target folder>\release\bundle\nsis\`. Its name is
 `EDCoPilot VoiceBridge_<version>_x64-setup.exe`. The target folder is
 `target` when `CARGO_TARGET_DIR` is not set.
+
+`ui/tauri.conf.json` sets `bundle.createUpdaterArtifacts` to `true`. With
+this setting, `npm run tauri build` signs the installer for the updater and
+needs the private signing key. Without the key, the build makes the
+installer but then stops with the error "A public key has been found, but
+no private key". The file `ui/no-updater-artifacts.conf.json` switches the
+signature off for one build. `cargo build`, `cargo test`, and
+`npm run tauri dev` do not need the key.
+
+To build a signed installer (only the owner of the key), set the path of the
+key file before step 4, and use `npm run tauri build` without `--config`.
+Run these two lines in the repository folder:
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = "$PWD\private\updater\voicebridge.key"
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+```
+
+`TAURI_SIGNING_PRIVATE_KEY` takes the path of the key file or the key itself.
+The build then also writes `EDCoPilot VoiceBridge_<version>_x64-setup.exe.sig`.
+An old `.sig` file of an earlier build can stay in the folder. Delete the old
+files before a build.
 
 At the first build, the Tauri bundler downloads NSIS and
 `nsis_tauri_utils.dll` into `%LOCALAPPDATA%\tauri`. The next builds use this
@@ -279,14 +302,17 @@ Do not set the environment variable `RUSTFLAGS`. It replaces the flags of
 | `SHERPA_ONNX_ARCHIVE_DIR` | A folder with the archive. The build script copies the archive from there and does not download it. |
 | `CARGO_TARGET_DIR` | A separate target folder, for example for the installer build. |
 | `VOICEBRIDGE_DEV_DATA_DIR` | The data folder of a development build of the window program. It must be an absolute path. |
+| `TAURI_SIGNING_PRIVATE_KEY` | The path of the updater signing key, or the key itself. Only for a signed installer. See "Build the installer". |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The password of the signing key. The key of the project has none: set an empty value. |
 | `RUSTFLAGS` | Do not set it. See "The static C runtime". |
 
 ## Continuous integration and releases
 
 - `.github/workflows/ci.yml` runs for each pull request and each push to the
   default branch. It does the steps of "Run the tests".
-- `.github/workflows/release.yml` runs for each tag `v*`. It builds the
-  installer and makes a draft release. The owner publishes the draft.
+- `.github/workflows/release.yml` runs for each tag `v*`. It builds and signs
+  the installer, writes `latest.json`, and makes a draft release. The owner
+  publishes the draft.
 
 Both workflows download the sherpa-onnx archive and check its SHA-256 (Method
 2).
@@ -306,10 +332,49 @@ To make a release:
 7. Build the installer and do the checks of [CHECKLIST.md](CHECKLIST.md).
 8. Make the tag, for example `git tag v0.2.0`.
 9. Push the tag.
+10. Wait for the workflow. Open the draft release on GitHub.
+11. Download the installer of the draft. Compare its SHA-256 with
+    `SHA256SUMS.txt`. Install it on a test computer and do a short check.
+12. Do the steps N1 and N2 of [CHECKLIST.md](CHECKLIST.md).
+13. Publish the draft.
+14. Do the steps N3 to N12 of [CHECKLIST.md](CHECKLIST.md) with an older
+    installed version.
 
 The workflow stops when the tag and a version are different. It also stops
 when `CHANGELOG.md` has no section for the version. The text of that section
-becomes the "Changes" part of the release notes.
+becomes the "Changes" part of the release notes and the `notes` of
+`latest.json`.
+
+### The update files of a release
+
+The installed programs read
+`https://github.com/Superbrain8/edcopilot-voicebridge/releases/latest/download/latest.json`.
+GitHub gives this address only for the newest published release. A draft or a
+pre-release does not reach the users. Thus the order is: draft, then the test
+of the installer, then publish. After you publish, each installed program
+finds the new version at its next check.
+
+The release workflow does these steps for the update:
+
+1. The build signs the installer with the secret `TAURI_SIGNING_PRIVATE_KEY`.
+   A tag build without this secret stops with an error. A dry run
+   (workflow_dispatch) without the secret builds without the signature.
+2. The release job writes `latest.json` with `jq`: the version without "v",
+   the text of the CHANGELOG section, the time, the content of the `.sig`
+   file, and the address of the installer asset of the tag.
+3. The job checks `latest.json`: the file is JSON, its version is the version
+   of the tag, the address is the installer asset, and the signature is not
+   empty.
+4. The job checks the signature with `minisign` and the public key of
+   `ui/tauri.conf.json`. The signed comment must have the version of the tag.
+5. The draft gets the installer, `<installer>.sig`, `SHA256SUMS.txt`, and
+   `latest.json`. `SHA256SUMS.txt` has only the installer.
+
+Do not rename or replace the installer asset after the workflow. The address
+in `latest.json` names the asset, and the signature covers its bytes.
+
+The secret `TAURI_SIGNING_PRIVATE_KEY` holds the content of the private key
+file. See "The signing key" in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 To test the release build without a release, start the workflow "Release" by
 hand (workflow_dispatch). The installer is then a workflow artifact only.

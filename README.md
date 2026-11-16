@@ -152,12 +152,20 @@ times. We did not test this case.
 ## Privacy
 
 - With the default speech engine, your voice stays on your PC. VoiceBridge
-  sends nothing to the internet.
+  sends no voice and no text to the internet.
 - You can select a speech server instead (an OpenAI-compatible service). Then
   your voice goes to that server. The default setting does not use a speech server.
 - VoiceBridge makes one download: the speech model, from the sherpa-onnx
   project on GitHub. The installer can also download Microsoft WebView2 from
   Microsoft, if your Windows does not have it.
+- The window program checks for updates on github.com. It asks the releases
+  page of the project for the newest version: about 10 seconds after the
+  start, and then every 24 hours. It sends no data about you. To stop this
+  check, clear "Check for updates at the start" on the Setup screen
+  (`updates.check = false`). The button "Check for updates" on the
+  Diagnostics screen still works.
+- The program asks you before it installs an update. It never installs an
+  update by itself, and never while a voice session runs.
 - Your settings, word tables, model, and logs are in `%APPDATA%\VoiceBridge`.
   An uninstall keeps this folder. Delete it by hand to remove everything.
 - A speech server can need an API key (a password for the service).

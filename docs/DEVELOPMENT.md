@@ -95,6 +95,62 @@ Do not break these rules. Many tests check them.
   Windows Credential Manager under this name.
 - The repository holds no EDCoPilot data. Tests use invented data. Real
   data stays in `private/` (see "Live tests").
+- **The program installs only an update with a correct signature, and only
+  after a click.** No code path starts an installer without the signature
+  check of the updater plugin. A session start and an update install never
+  run at the same time (see "The updater").
+
+## The updater
+
+The window program uses the Tauri updater plugin from the Rust side only
+(`ui/src/updater.rs`). The capability file gives the page no updater
+permission. The page calls the commands of `commands::ipc`.
+
+- `ui/tauri.conf.json` has the update address, the public key, and
+  `requireSignedVersion`. No setting of the user changes them. A test
+  (`test_the_plugin_configuration_is_safe`) compares them with the expected
+  values.
+- The plugin checks the signature of the installer with the public key. The
+  installer itself has no Windows code signature. Thus the updater key is the
+  only protection against a changed installer.
+- The capture lock is the gate between a session start and an install. See
+  the comment at the top of `ui/src/state.rs`.
+- The tests use a throwaway key pair. `ui/fixtures/updater` has its public key
+  and the files that it signed. The tests never use the key of the project.
+
+### The signing key
+
+The private key of the project signs each installer. The release workflow
+reads it from the repository secret `TAURI_SIGNING_PRIVATE_KEY`. The key has
+no password. The owner keeps a copy in `private/updater/voicebridge.key`.
+Git ignores the folder `private/`. Never commit the key, never print it in a
+log, and never send it in a message.
+
+Make a backup of the key in a safe place outside the computer, for example a
+password manager. If the key is lost, the installed programs cannot accept
+a new update: each update of a new key fails the signature check. Each user
+must then install the next version by hand from the Releases page.
+
+To replace the key (for example after a leak), do these steps:
+
+1. In the folder `ui/web`, make a new key pair:
+
+   ```powershell
+   npm run tauri signer generate -- -w ..\private\updater\voicebridge-new.key
+   ```
+
+2. Put the new public key (the content of the `.pub` file) into
+   `plugins.updater.pubkey` of `ui/tauri.conf.json` and into the test
+   `test_the_plugin_configuration_is_safe`.
+3. Sign the release that has the new public key with the OLD key. The
+   installed programs know only the old key. Thus they can install this
+   release.
+4. After that release, replace the secret `TAURI_SIGNING_PRIVATE_KEY` with the
+   new private key. The next releases use the new key.
+
+After a leak, also tell the users. A person with the old key can make an
+installer that the old versions accept. That person must also change the
+files of the GitHub release, or the update address, to reach the users.
 
 ## Live tests
 

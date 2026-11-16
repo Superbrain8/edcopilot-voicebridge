@@ -390,6 +390,16 @@ variable. The console program reads only the variable.
 | "Threshold" | Minimum confidence, from 0.0 to 1.0. A higher value gives fewer wrong actions. |
 | "One-word phrases must be exact" | A phrase of one word needs confidence 1.0. Keep it on. |
 
+### Updates
+
+| Field | Meaning |
+| --- | --- |
+| "Check for updates at the start" | On: the program checks for a newer version about 10 seconds after the start and then every 24 hours. Off: the program checks only when you click "Check for updates" on the Diagnostics screen. The key is `updates.check`. |
+
+The help line of the field is "The program asks the GitHub page of the
+project for the newest version. It sends no data about you." Save writes the
+switch. A running session does not need a restart for it. See "Updates".
+
 ### Save the settings
 
 "Save" writes the changes. "Discard changes" removes them. The line "The
@@ -527,6 +537,10 @@ and each problem.
 
 The talk lamp shows "Talk button: no session", "Talk button up", or "Talk
 button down: listening".
+
+When a newer version is available, a note shows at the top of the screen:
+"Version <new> is available. You have version <current>." The note has the
+buttons "Install update" and "Later". See "Updates".
 
 To test the program without a command to EDCoPilot, do these steps:
 
@@ -789,6 +803,21 @@ in the filter to find a command.
 "Output of the check" shows the lines of `voicebridge check` for the
 configuration file. "Check again" runs the check again.
 
+"Updates" shows "You have version <current>." and the result of the last
+update check:
+
+| Line | Meaning |
+| --- | --- |
+| "You have the latest version. Last check: <time>." | The last check found no newer version. |
+| "Version <new> is available." | A newer version is available. The Status screen has the note. |
+| "The last check failed: <cause>." | The program could not get the update information. |
+| "The program does not check for updates (updates.check is false)." | The switch is off, and you did not click "Check for updates" in this run. |
+| "The program did not check for updates yet." | The first automatic check comes about 10 seconds after the start. |
+
+"Check for updates" asks for the newest version now. It also works when the
+switch is off. A developer build shows "This is a developer build. It has no
+updates."
+
 ## The notification area
 
 The close button of the window does not stop the program. It hides the
@@ -837,10 +866,78 @@ A second session gets the
 problem "a voice session for <request file> is already running". This is also
 true for a dry run.
 
+## Updates
+
+The window program can update itself. The program asks the GitHub releases
+page of the project for the file `latest.json`. That file names the newest
+published version. The program sends no data about you. A draft or a
+pre-release on GitHub does not count.
+
+The program checks at these times:
+
+- About 10 seconds after the start, when `updates.check` is true. The check
+  does not stop the start.
+- Every 24 hours while the program runs, when `updates.check` is true.
+- When you click "Check for updates" on the Diagnostics screen. This also
+  works when `updates.check` is false.
+
+A development build never checks.
+
+Only a newer version counts. An equal or older version is "the latest
+version". The program never installs an update without your click.
+
+A check that the program starts by itself and that fails shows nothing on
+the Status screen. The Diagnostics screen shows "The last check failed:
+<cause>." A check that fails after a click on "Check for updates" shows "The
+program could not check for updates: <cause>. Try again later."
+
+### Install an update
+
+1. On the Status screen, find the note "Version <new> is available. You have
+   version <current>."
+2. Optional: open "What is new" to read the changes. The note also shows the
+   address of the release page as text. Copy it into your browser to see the
+   page.
+3. If a session runs, click "Stop". While a session runs, starts, or stops,
+   "Install update" is off and the note shows "Stop the session first."
+4. Click "Install update".
+5. Wait. The note shows "Downloading the update: <n> of <m> MB." Click
+   "Cancel" to stop the download. The program does not change.
+6. After the download, the program checks the signature of the installer.
+   The note then shows "The update is ready. The program closes and the
+   installer starts."
+7. The program closes. The installer shows a small progress window and asks
+   no questions.
+8. The installer starts the new version of the program.
+
+During the download and the install, you cannot start a session. A start
+then gives "The update is in progress."
+
+"Later" hides the note until the next start of the program or the next
+click on "Check for updates".
+
+Your configuration, your word tables, the model, and the API key stay as they
+are. The installer replaces only the program folder.
+
+### When the update fails
+
+If the download or the signature check fails, the note shows "The update did
+not install: <cause>. The program is not changed." The program never starts
+an installer with a wrong signature. Click "Install update" again later.
+
+If the update fails again, install the new version by hand:
+
+1. Open the Releases page of the project on GitHub.
+2. Download `EDCoPilot-VoiceBridge_<version>_x64-setup.exe` of the newest
+   release.
+3. Stop the session and quit the program (right-click the icon in the
+   notification area, then select Quit).
+4. Start the installer.
+
 ## Update the window program
 
-To update the program, run the installer of the new version. The data folder
-stays as it is.
+To update the program by hand, run the installer of the new version. The data
+folder stays as it is.
 
 - The program reads the commands from the EDCoPilot profile, as before.
 - Your copies of the word tables stay as they are. The update does not add
@@ -1290,6 +1387,15 @@ The console text stays as it is.
 Use a directory for `save_audio_dir` that holds nothing else. The program
 deletes its oldest audio files in that directory. See "Collect data for
 tuning".
+
+### `[updates]`
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `check` | `true` | The window program checks for a newer version at its start and every 24 hours. `false` switches the automatic check off. "Check for updates" on the Diagnostics screen still works. |
+
+The console program does not check for updates. The address of the update
+server is not a setting. The table has no other key.
 
 ## The commands
 

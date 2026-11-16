@@ -3,7 +3,8 @@
 This file is the manual checklist for a release. A person does the steps on
 a real computer with the installer of the release. The automatic tests cannot
 do these steps. Sections A to L check the window program `voicebridge-ui`.
-Section M checks the console program `voicebridge`.
+Section M checks the console program `voicebridge`. Section N checks the
+update inside the program. It needs an older installed version.
 
 Do the check in a copy of this file. Write the result of each step in the
 column "Result": `pass`, `fail`, or a short note. Do not commit the results.
@@ -261,6 +262,29 @@ configuration file for it (see "Make the configuration file" in
 | M7 | **Real command.** Start EDCoPilot. Run `voicebridge run`. Speak "help voice log". Press `Ctrl+C`. | A "sent" line shows. EDCoPilot opens the help for the voice log. | |
 | M8 | Set a joystick button as talk button with `voicebridge bind`. Run `voicebridge run --dry-run`. Click into another window, for example the game. Hold the joystick button and speak a command. | A result line shows. The button works without focus. If it does not work, write `fail`: the keyboard key is then the talk button for the game. | |
 | M9 | Set `mode = "always_listening"` in `[microphone]`. Run `voicebridge run --dry-run`. Speak "copilot, help voice log", then "help voice log". | The first text gives a "dry run" line. The second text gives a "no wake word" line. | |
+
+## N. Updates inside the program
+
+Do this part at the release of a version after 0.2.0. It needs two
+releases: an older installed version with the updater (0.2.0 or later), and
+the new version as a published release with `latest.json`. A draft release
+does not reach the program. Thus do N3 to N12 after you publish the release.
+Do N1 and N2 before you publish.
+
+| # | Action | Expected result | Result |
+| --- | --- | --- | --- |
+| N1 | Open the draft release on GitHub. | The draft has the installer, `<installer>.sig`, `SHA256SUMS.txt`, and `latest.json`. `latest.json` has the new version without "v", the text of the CHANGELOG section as `notes`, and the address of the installer of this release. | |
+| N2 | On the Setup screen of the installed older version, clear "Check for updates at the start" and click "Save". Quit the program and start it again. Wait 30 seconds. | No note shows on the Status screen. The Diagnostics screen shows "The program does not check for updates (updates.check is false)." | |
+| N3 | Publish the release. On the Diagnostics screen, click "Check for updates". | The line shows "Version <new> is available." The Status screen shows "Version <new> is available. You have version <old>." | |
+| N4 | Select "Check for updates at the start" again and click "Save". Quit the program and start it again. Wait 30 seconds. | The note shows on the Status screen without a click. | |
+| N5 | Click "Later". Open another screen and come back. | The note is gone. It does not come back before the next start or the next click on "Check for updates". | |
+| N6 | Click "Check for updates" on the Diagnostics screen. Open the Status screen. Open "What is new". | The note shows again. "What is new" shows the changes of the new version and the address of its release page. | |
+| N7 | Click "Start as dry run". | "Install update" is off. The note shows "Stop the session first." | |
+| N8 | Click "Stop". Click "Install update". Click "Cancel" during the download. | The note shows "Downloading the update: <n> of <m> MB." After "Cancel", the note shows the offer again. The program does not change. | |
+| N9 | Click "Install update". During the download, click "Start". | The session does not start. The screen shows "The update is in progress." | |
+| N10 | Wait. | The note shows "The update is ready. The program closes and the installer starts." The program closes. A small installer window shows progress and asks no questions. No Windows administrator prompt shows. | |
+| N11 | Wait until the installer ends. | The program starts again by itself. The version in the window is the new version. The Diagnostics screen shows "You have the latest version. Last check: <time>." after a click on "Check for updates". | |
+| N12 | Open the Setup and Microphone screens. Click "Start as dry run" and speak a command. | Your settings, the talk button, the word tables, and the API key are the same as before the update. The session works. | |
 
 ## After the check
 

@@ -63,6 +63,12 @@ pub const TICK: Duration = Duration::from_secs(30 * 60);
 pub const CHECK_INTERVAL_MS: u64 = 24 * 60 * 60 * 1000;
 /// The time that the window shows the ready text before the program closes.
 pub const READY_PAUSE: Duration = Duration::from_secs(2);
+/// False for a normal release: `ui/signing-key.pub` (the key that signs the
+/// release) is the key of `tauri.conf.json`. True only for a bridge release
+/// of a key change: `tauri.conf.json` has the NEW key, and the release is
+/// signed with the OLD key of `ui/signing-key.pub`. A test checks the rule.
+/// See "A new key (rotation)" in docs/DEVELOPMENT.md.
+pub const BRIDGE_RELEASE: bool = false;
 /// The longest text of the release notes that the window gets.
 pub const MAX_NOTES_CHARS: usize = 8_000;
 
@@ -326,7 +332,8 @@ impl Updates {
     pub fn auto_check_due(&self, now: u64) -> bool {
         match lock(&self.inner).checked_at {
             None => true,
-            Some(at) => now.saturating_sub(at) >= CHECK_INTERVAL_MS,
+            // A time in the future: the clock went back. Check again.
+            Some(at) => at > now || now - at >= CHECK_INTERVAL_MS,
         }
     }
 
@@ -381,12 +388,13 @@ impl Updates {
             let manual = inner.check_manual;
             inner.check_running = false;
             inner.check_manual = false;
-            inner.checked_at = Some(now);
             if matches!(inner.phase, Phase::Downloading { .. } | Phase::Ready) {
                 // The user started the install of the offer during an
-                // automatic check. The install keeps its offer.
+                // automatic check. The install keeps its offer. The result
+                // is discarded and does not count as a check.
                 None
             } else {
+                inner.checked_at = Some(now);
                 match result {
                     Ok(None) => {
                         inner.phase = Phase::UpToDate;

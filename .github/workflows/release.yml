@@ -16,7 +16,7 @@
 #   and node.exe, which runs the Tauri CLI in its own process. A dry run
 #   (workflow_dispatch) never signs.
 # - The release job writes latest.json and checks the signature with the
-#   public key of ui/tauri.conf.json.
+#   public key of ui/signing-key.pub (see docs/DEVELOPMENT.md).
 # - The program reads releases/latest/download/latest.json: a draft does not
 #   reach the users, only a published release does.
 #
@@ -63,6 +63,9 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       installer: ${{ steps.package.outputs.installer }}
+      # The SHA-256 of the installer of this build. The jobs "sign" and
+      # "release" compare their download with it.
+      sha256: ${{ steps.package.outputs.sha256 }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -99,6 +102,11 @@ jobs:
             if ($package.version -ne $app) { $bad += "crate $($package.name) has $($package.version)" }
           }
           if ($web -ne $app) { $bad += "ui/web/package.json has $web" }
+          # Only MAJOR.MINOR.PATCH: the program never offers a pre-release,
+          # and build metadata does not make a version newer.
+          if ($app -notmatch '^\d+\.\d+\.\d+$') {
+            $bad += "the version $app has a pre-release or build part, a release needs MAJOR.MINOR.PATCH only"
+          }
           if ($env:REF_TYPE -eq 'tag') {
             $tag = $env:REF_NAME
             if ($tag -ne "v$app") { $bad += "the tag is $tag, but ui/tauri.conf.json has $app (expected tag v$app)" }
@@ -216,6 +224,19 @@ jobs:
           name: voicebridge-installer
           path: release
 
+      # The installer must be the file of the build job, byte for byte.
+      - name: Check the installer of the build job
+        env:
+          INSTALLER: ${{ needs.build.outputs.installer }}
+          EXPECTED: ${{ needs.build.outputs.sha256 }}
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 -Path (Join-Path 'release' $env:INSTALLER)).Hash.ToLowerInvariant()
+          if ([string]::IsNullOrEmpty($env:EXPECTED) -or $hash -ne $env:EXPECTED) {
+            Write-Host "::error::The installer is not the file of the build job: SHA-256 $hash, the build job made $($env:EXPECTED). The job does not sign it."
+            throw "Installer hash mismatch."
+          }
+          Write-Host "SHA-256 $hash"
+
       - name: Check the signing key
         env:
           HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
@@ -268,14 +289,14 @@ jobs:
         shell: bash
     steps:
       # Only two files are necessary here: CHANGELOG.md has the hand-written
-      # notes, ui/tauri.conf.json has the public key of the updater.
-      - name: Check out the change log and the updater key
+      # notes, ui/signing-key.pub has the public key that signs the release.
+      - name: Check out the change log and the signing key
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: |
             CHANGELOG.md
-            ui/tauri.conf.json
+            ui/signing-key.pub
           sparse-checkout-cone-mode: false
 
       - name: Download the installer artifact
@@ -292,7 +313,16 @@ jobs:
 
       - name: Check the SHA-256
         working-directory: release
-        run: sha256sum --check SHA256SUMS.txt
+        env:
+          INSTALLER: ${{ needs.build.outputs.installer }}
+          EXPECTED: ${{ needs.build.outputs.sha256 }}
+        run: |
+          sha256sum --check SHA256SUMS.txt
+          hash="$(sha256sum "${INSTALLER}" | cut -d ' ' -f 1)"
+          if [ -z "${EXPECTED}" ] || [ "$hash" != "${EXPECTED}" ]; then
+            echo "::error::The installer is not the file of the build job: SHA-256 ${hash}, the build job made ${EXPECTED}."
+            exit 1
+          fi
 
       # The changes come from the section "## <version>" of CHANGELOG.md. A
       # person writes that section before the tag is made. The release
@@ -346,8 +376,10 @@ jobs:
 
       # The checks before the release: the file is JSON, its version is the
       # tag, the address is the asset, and the signature is correct for
-      # the public key of ui/tauri.conf.json. Tauri keys and signatures are
-      # minisign files in base64.
+      # the public key of ui/signing-key.pub (the key that signs this
+      # release: normally the key of ui/tauri.conf.json, the old key in a
+      # bridge release). Tauri keys and signatures are minisign files in
+      # base64.
       - name: Check latest.json and the signature
         env:
           VERSION: ${{ needs.build.outputs.version }}
@@ -377,7 +409,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq minisign > /dev/null
           keys="$(mktemp -d)"
-          jq -j '.plugins.updater.pubkey' ui/tauri.conf.json | base64 -d > "$keys/voicebridge.pub"
+          tr -d '\r\n' < ui/signing-key.pub | base64 -d > "$keys/voicebridge.pub"
           printf '%s' "$signature" | base64 -d > "$keys/installer.minisig"
           minisign -V -p "$keys/voicebridge.pub" -m "release/${INSTALLER}" -x "$keys/installer.minisig" | tee "$keys/result.txt"
           # tauri build puts the version into the signed comment. The

@@ -691,7 +691,8 @@ fn test_an_automatic_check_keeps_the_offer_on_the_screen() {
     let status = updates.status();
     assert_eq!(status.phase, "downloading");
     assert_eq!(status.version.as_deref(), Some("0.3.0"));
-    assert_eq!(status.checked_at, Some(5));
+    // The discarded result does not count as a check.
+    assert_ne!(status.checked_at, Some(5));
     // A manual check shows "checking".
     let fresh = with_offer(pending);
     assert!(fresh.begin_check(true).unwrap());
@@ -744,4 +745,57 @@ fn test_the_project_public_key_decodes_to_a_minisign_key() {
         .map(|b| format!("{b:02X}"))
         .collect();
     assert!(header.ends_with(&id), "{header} {id}");
+}
+
+/// A last check in the future (a clock that went back) does not stop the
+/// automatic check.
+#[test]
+fn test_a_last_check_in_the_future_is_due() {
+    let updates = release_build();
+    updates.begin_check(false).unwrap();
+    updates.finish_check(Ok(None), 5_000_000).unwrap();
+    assert!(!updates.auto_check_due(5_000_001));
+    assert!(updates.auto_check_due(4_999_999));
+    assert!(updates.auto_check_due(1_000));
+}
+
+/// An automatic check that ends during a download discards its result and
+/// does not count as a check: the next tick checks again.
+#[test]
+fn test_a_discarded_check_does_not_set_the_time() {
+    let pending = FakePending::new(Download::Forever);
+    let updates = with_offer(pending);
+    let before = updates.status().checked_at;
+    assert!(updates.begin_check(false).unwrap());
+    let (id, _) = updates.begin_download().unwrap();
+    updates.finish_check(Ok(None), 9).unwrap();
+    assert_eq!(updates.status().checked_at, before);
+    // The download fails: the offer is back, and the check is due.
+    updates.finish_download(id, Err(Cause::Download));
+    assert_eq!(updates.status().phase, "available");
+    assert!(updates.auto_check_due(before.unwrap() + CHECK_INTERVAL_MS));
+}
+
+/// `ui/signing-key.pub` holds the public key that signs the releases. The
+/// release job checks the signature with it. Normally it is the key of
+/// tauri.conf.json. Only a bridge release (`BRIDGE_RELEASE`) has a new key
+/// in tauri.conf.json and the old key in the file.
+#[test]
+fn test_the_signing_key_file_follows_the_bridge_rule() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let config: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("tauri.conf.json")).unwrap())
+            .unwrap();
+    let in_config = config["plugins"]["updater"]["pubkey"].as_str().unwrap();
+    let signing = std::fs::read_to_string(dir.join("signing-key.pub")).unwrap();
+    let signing = signing.trim();
+    assert!(!signing.is_empty());
+    if BRIDGE_RELEASE {
+        assert_ne!(signing, in_config, "a bridge release has a new key");
+    } else {
+        assert_eq!(
+            signing, in_config,
+            "the releases sign with the key of the program"
+        );
+    }
 }

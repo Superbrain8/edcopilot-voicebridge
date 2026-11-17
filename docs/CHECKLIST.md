@@ -271,6 +271,10 @@ the new version as a published release with `latest.json`. A draft release
 does not reach the program. Thus do N3 to N12 after you publish the release.
 Do N1 and N2 before you publish.
 
+After you publish, wait 5 minutes before N3. For some minutes, GitHub can
+still send the program to the older release. Then the program shows the
+older state, or "the server did not send the update information".
+
 | # | Action | Expected result | Result |
 | --- | --- | --- | --- |
 | N1 | Open the draft release on GitHub. Open the run of the workflow. | The run has the job "Sign the installer for the updater" in the environment `release`. The draft has the installer, `<installer>.sig`, `SHA256SUMS.txt`, and `latest.json`. `latest.json` has the new version without "v", the text of the CHANGELOG section as `notes`, and the address of the installer of this release. | |

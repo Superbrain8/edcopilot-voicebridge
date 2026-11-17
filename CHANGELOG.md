@@ -4,6 +4,13 @@ This file lists the changes of each version, newest first. The release
 workflow copies the section of a version into the notes of its release.
 Write the section before you make the tag. Keep each line short.
 
+## 0.2.1
+
+- A small version that tests the update inside the program. The program
+  itself has no change.
+- The release checklist tells you to wait some minutes after a new release,
+  before you check for updates.
+
 ## 0.2.0
 
 - The window program can update itself. It asks the GitHub page of the

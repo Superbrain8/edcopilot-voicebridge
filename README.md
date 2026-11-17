@@ -6,7 +6,7 @@ microphone. VoiceBridge changes your speech to text on your own PC. It finds
 the matching voice command of your EDCoPilot installation. Then it gives that
 command to EDCoPilot. VoiceBridge is free.
 
-**Status:** This is an early version (0.1.0). One player made it for the
+**Status:** This is an early version. One player made it for the
 community and tested it on one PC only. Please tell us about problems and
 ideas on the [Issues page](../../issues) of this repository.
 

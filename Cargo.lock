@@ -1256,7 +1256,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "edcopilot-voicebridge-audio"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "cpal",
@@ -1267,7 +1267,7 @@ dependencies = [
 
 [[package]]
 name = "edcopilot-voicebridge-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "edcopilot-voicebridge-core",
@@ -1283,7 +1283,7 @@ dependencies = [
 
 [[package]]
 name = "edcopilot-voicebridge-stt"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "hound",
@@ -5753,7 +5753,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voicebridge"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -5773,7 +5773,7 @@ dependencies = [
 
 [[package]]
 name = "voicebridge-ui"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
